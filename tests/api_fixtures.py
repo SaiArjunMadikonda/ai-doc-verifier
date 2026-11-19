@@ -55,3 +55,92 @@ SPEC = {
         }
     },
 }
+
+
+EXAMPLE_SPEC = {
+    "openapi": "3.1.0",
+    "info": {"title": "shop", "version": "1"},
+    "servers": [{"url": "https://api.shopco.io/v1"}],
+    "paths": {
+        "/users": {
+            "get": {
+                "parameters": [
+                    {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/components/schemas/User"},
+                                }
+                            }
+                        },
+                    }
+                },
+            },
+            "post": {
+                "requestBody": {
+                    "content": {
+                        "application/json": {"schema": {"$ref": "#/components/schemas/UserIn"}}
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "created",
+                        "content": {
+                            "application/json": {"schema": {"$ref": "#/components/schemas/User"}}
+                        },
+                    },
+                    "404": {"description": "nope"},
+                },
+            },
+        },
+        "/users/{user_id}": {
+            "get": {
+                "parameters": [
+                    {
+                        "name": "user_id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "integer"},
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "content": {
+                            "application/json": {"schema": {"$ref": "#/components/schemas/User"}}
+                        },
+                    }
+                },
+            }
+        },
+    },
+    "components": {
+        "schemas": {
+            "UserIn": {
+                "type": "object",
+                "required": ["email"],
+                "properties": {"email": {"type": "string"}, "age": {"type": "integer"}},
+            },
+            "User": {
+                "type": "object",
+                "required": ["id", "email"],
+                "properties": {
+                    "id": {"type": "integer"},
+                    "email": {"type": "string"},
+                    "age": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                    "address": {"$ref": "#/components/schemas/Address"},
+                },
+            },
+            "Address": {
+                "type": "object",
+                "required": ["city"],
+                "properties": {"city": {"type": "string"}, "zip": {"type": "string"}},
+            },
+        }
+    },
+}

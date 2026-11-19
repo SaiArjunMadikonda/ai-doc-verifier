@@ -82,6 +82,8 @@ class Operation:
     path: str  # as written in the spec
     params: list[SpecParam] = field(default_factory=list)
     responses: set[str] = field(default_factory=set)
+    # status code -> raw JSON schema node of the application/json response (may be a $ref)
+    response_schemas: dict[str, dict] = field(default_factory=dict)
     unresolved: bool = False  # something could not be resolved ($ref to elsewhere)
     pointer: str = ""
 
@@ -243,9 +245,25 @@ class Spec:
                         )
                     )
                 self._add_body_params(op, operation, pointer)
-                for code in (op.get("responses") or {}).keys():
+                for code, resp in (op.get("responses") or {}).items():
                     operation.responses.add(str(code).upper())
+                    schema = self._response_schema(resp)
+                    if schema is not None:
+                        operation.response_schemas[str(code).upper()] = schema
                 self.operations[(method.upper(), norm)] = operation
+
+    def _response_schema(self, response) -> dict | None:
+        resp, ok = self.resolve_ref(response)
+        if not ok or not isinstance(resp, dict):
+            return None
+        content = resp.get("content")
+        if isinstance(content, dict):
+            for media, media_obj in content.items():
+                if "json" in media and isinstance(media_obj, dict) and media_obj.get("schema"):
+                    return media_obj["schema"]
+            return None
+        schema = resp.get("schema")  # Swagger 2
+        return schema if isinstance(schema, dict) else None
 
     def _add_body_params(self, op: dict, operation: Operation, pointer: str) -> None:
         body = op.get("requestBody")
@@ -834,6 +852,7 @@ class Report:
     undocumented_operations: list[str] = field(default_factory=list)
     missing_required_params: list[str] = field(default_factory=list)
     claims_checked: int = 0
+    examples_checked: int = 0  # code examples and sample responses that were verified
     spec_source: str = ""
     docs_root: str = "."  # where doc files live, used to re-read snippets for AI rewrites
 
@@ -854,6 +873,7 @@ class Report:
         return {
             "spec": self.spec_source,
             "claims_checked": self.claims_checked,
+            "examples_checked": self.examples_checked,
             "summary": {v: self.count(v) for v in (VERIFIED, CONTRADICTED, UNCERTAIN)},
             "health": self.health.to_dict(),
             "findings": [
@@ -1079,10 +1099,15 @@ def verify(claims: list[Claim], spec: Spec) -> Report:
 
 
 def verify_docs(
-    spec: Spec, doc_paths: list[str | os.PathLike], root: str | os.PathLike = "."
+    spec: Spec,
+    doc_paths: list[str | os.PathLike],
+    root: str | os.PathLike = ".",
+    check_examples: bool = True,
 ) -> Report:
-    """Convenience wrapper: read docs, extract claims, verify them."""
+    """Convenience wrapper: read docs, extract claims (and examples), verify them."""
     claims: list[Claim] = []
+    example_findings: list[Finding] = []
+    examples_checked = 0
     root_p = Path(root).resolve()
     for f in collect_doc_files(doc_paths):
         try:
@@ -1098,7 +1123,17 @@ def verify_docs(
         for c in file_claims:
             c.line = remap_line(linemap, c.line)
         claims += file_claims
+        if check_examples:
+            from examples_check import check_examples as run_examples
+
+            found, count = run_examples(markdown, rel.replace("\\", "/"), spec)
+            for finding in found:
+                finding.claim.line = remap_line(linemap, finding.claim.line)
+            example_findings += found
+            examples_checked += count
     report = verify(claims, spec)
+    report.findings += example_findings
+    report.examples_checked = examples_checked
     report.docs_root = str(root_p)
     return report
 
@@ -1132,15 +1167,17 @@ _ICON = {VERIFIED: "✅", CONTRADICTED: "❌", UNCERTAIN: "❓"}
 
 def render_markdown(report: Report, max_items: int = 50, history: list[dict] | None = None) -> str:
     out = ["## 🔎 API Contract Verification", ""]
-    if report.claims_checked == 0:
+    if report.claims_checked == 0 and report.examples_checked == 0:
         out += [
             f"No endpoint claims such as `GET /path` were found in the documentation checked "
             f"against `{report.spec_source}`.",
             "",
         ]
         return "\n".join(out)
+    extra = f" and **{report.examples_checked}** example(s)" if report.examples_checked else ""
     out += [
-        f"Checked **{report.claims_checked}** documented endpoint(s) against `{report.spec_source}`.",
+        f"Checked **{report.claims_checked}** documented endpoint(s){extra} "
+        f"against `{report.spec_source}`.",
         "",
         "| Verdict | Checks |",
         "|---|---|",
