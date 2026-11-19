@@ -41,7 +41,9 @@ UNCERTAIN = "uncertain"
 HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 _METHODS_RE = "|".join(m.upper() for m in HTTP_METHODS)
 
-DOC_EXTENSIONS = (".md", ".mdx", ".markdown")
+from doc_formats import ALL_EXTENSIONS as DOC_EXTENSIONS  # noqa: E402
+from doc_formats import kind_of, remap_line, to_markdown  # noqa: E402
+
 _SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", ".tox", "site-packages"}
 
 SPEC_CANDIDATES = (
@@ -1091,7 +1093,11 @@ def verify_docs(
             rel = str(f.resolve().relative_to(root_p))
         except ValueError:
             rel = str(f)
-        claims += extract_claims(text, rel.replace("\\", "/"))
+        markdown, linemap = to_markdown(text, kind_of(f))
+        file_claims = extract_claims(markdown, rel.replace("\\", "/"))
+        for c in file_claims:
+            c.line = remap_line(linemap, c.line)
+        claims += file_claims
     report = verify(claims, spec)
     report.docs_root = str(root_p)
     return report
