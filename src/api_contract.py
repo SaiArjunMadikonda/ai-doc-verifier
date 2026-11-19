@@ -785,9 +785,11 @@ def collect_doc_files(paths: list[str | os.PathLike]) -> list[Path]:
 class Finding:
     verdict: str
     claim: Claim
-    check: str  # endpoint | parameter | response
+    check: str  # endpoint | parameter | response | example | example-response
     message: str
     evidence: str = ""
+    fix: str = ""  # deterministic suggestion for the docs
+    ai_fix: str = ""  # optional LLM-written rewrite (always shown as AI-generated)
 
 
 @dataclass
@@ -797,9 +799,16 @@ class Report:
     missing_required_params: list[str] = field(default_factory=list)
     claims_checked: int = 0
     spec_source: str = ""
+    docs_root: str = "."  # where doc files live, used to re-read snippets for AI rewrites
 
     def count(self, verdict: str) -> int:
         return sum(1 for f in self.findings if f.verdict == verdict)
+
+    @property
+    def health(self):
+        from health import compute_health
+
+        return compute_health(self.findings)
 
     @property
     def has_contradictions(self) -> bool:
@@ -810,6 +819,7 @@ class Report:
             "spec": self.spec_source,
             "claims_checked": self.claims_checked,
             "summary": {v: self.count(v) for v in (VERIFIED, CONTRADICTED, UNCERTAIN)},
+            "health": self.health.to_dict(),
             "findings": [
                 {
                     "verdict": f.verdict,
@@ -819,6 +829,8 @@ class Report:
                     "line": f.claim.line,
                     "message": f.message,
                     "evidence": f.evidence,
+                    "fix": f.fix,
+                    "ai_fix": f.ai_fix,
                 }
                 for f in self.findings
             ],
@@ -838,10 +850,10 @@ def _types_compatible(doc_type: str, spec_types: frozenset[str]) -> bool:
 def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | None]:
     findings: list[Finding] = []
 
-    def add(verdict, check, message, evidence=""):
+    def add(verdict, check, message, evidence="", fix=""):
         if evidence.startswith("#"):
             evidence = f"{spec.source}{evidence}"
-        findings.append(Finding(verdict, claim, check, message, evidence))
+        findings.append(Finding(verdict, claim, check, message, evidence, fix))
 
     norm, how = spec.find_path(claim.raw_path)
     if norm is None:
@@ -849,7 +861,18 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
         msg = f"The spec does not define the path `{claim.raw_path}`."
         if hint:
             msg += f" Closest path in the spec: `{hint}`."
-        add(CONTRADICTED, "endpoint", msg, f"{spec.source} (searched {len(spec.paths)} paths)")
+        fix = (
+            f"Change `{claim.raw_path}` to `{hint}`."
+            if hint
+            else f"Remove `{claim.method} {claim.raw_path}` from the docs, or add the endpoint to the API."
+        )
+        add(
+            CONTRADICTED,
+            "endpoint",
+            msg,
+            f"{spec.source} (searched {len(spec.paths)} paths)",
+            fix,
+        )
         return findings, None
 
     spec_path = spec.spec_path_for(norm)
@@ -870,6 +893,9 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
             "endpoint",
             f"Docs say `{claim.method}` but the spec defines {defined} for `{spec_path}`.",
             f"#/paths/{_pointer_escape(spec_path)}",
+            f"Use one of {defined} for `{spec_path}` in the docs."
+            if spec.methods_for(norm)
+            else f"Remove `{spec_path}` from the docs or define it in the API.",
         )
         return findings, None
 
@@ -905,6 +931,7 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
                     f"Parameter `{dp.name}` is documented as `{dp.location}` but the spec "
                     f"has it in `{o.location}`.",
                     o.pointer,
+                    f"Say that `{dp.name}` is sent in the {o.location}.",
                 )
             elif op.unresolved:
                 add(
@@ -922,23 +949,30 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
                     f"Parameter `{dp.name}` is documented but not in the spec for "
                     f"`{claim.method} {spec_path}`. Spec parameters: {known}.",
                     evidence,
+                    f"Remove `{dp.name}` from the docs, or add it to the API if it should exist.",
                 )
             continue
         sp = candidates[0]
         problems = []
+        fixes = []
         if dp.required is not None and dp.required != sp.required:
             problems.append(
                 f"docs say {'required' if dp.required else 'optional'}, spec says "
                 f"{'required' if sp.required else 'optional'}"
             )
+            fixes.append(f"mark `{dp.name}` as {'required' if sp.required else 'optional'}")
         if dp.type and not _types_compatible(dp.type, sp.types):
-            problems.append(f"docs say type `{dp.type}`, spec says `{'/'.join(sorted(sp.types))}`")
+            spec_type = "/".join(sorted(sp.types))
+            problems.append(f"docs say type `{dp.type}`, spec says `{spec_type}`")
+            fixes.append(f"change the type of `{dp.name}` to `{spec_type}`")
         if problems:
+            fix = fixes[0].capitalize() + "".join(f"; {f}" for f in fixes[1:]) + "."
             add(
                 CONTRADICTED,
                 "parameter",
                 f"Parameter `{dp.name}`: " + "; ".join(problems) + ".",
                 sp.pointer,
+                fix,
             )
         else:
             add(
@@ -973,6 +1007,7 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
                 "response",
                 f"Response `{code}` is documented but the spec only defines {listed}.",
                 f"{op.pointer}/responses",
+                f"Remove `{code}` from the docs, or add that response to the API.",
             )
     return findings, op
 
@@ -1014,7 +1049,29 @@ def verify_docs(
         except ValueError:
             rel = str(f)
         claims += extract_claims(text, rel.replace("\\", "/"))
-    return verify(claims, spec)
+    report = verify(claims, spec)
+    report.docs_root = str(root_p)
+    return report
+
+
+def apply_ai_rewrites(report: Report, max_items: int = 10) -> int:
+    """Ask the configured model to draft rewrites for contradictions (optional).
+
+    Needs ``MODEL_API_BASE`` (and usually ``MODEL_API_KEY`` / ``MODEL_NAME``), the same
+    settings the rest of the action uses. Returns how many rewrites were added.
+    """
+    if not os.environ.get("MODEL_API_BASE"):
+        print("AI rewrites skipped: MODEL_API_BASE is not set.")
+        return 0
+    from config import get_client, get_model_name
+    from suggestions import refine_fixes
+
+    root = Path(report.docs_root)
+
+    def read_text(rel: str) -> str:
+        return (root / rel).read_text(encoding="utf-8")
+
+    return refine_fixes(report, get_client(), get_model_name(), read_text, max_items)
 
 
 # ---------------------------------------------------------------------------
@@ -1024,7 +1081,7 @@ def verify_docs(
 _ICON = {VERIFIED: "✅", CONTRADICTED: "❌", UNCERTAIN: "❓"}
 
 
-def render_markdown(report: Report, max_items: int = 50) -> str:
+def render_markdown(report: Report, max_items: int = 50, history: list[dict] | None = None) -> str:
     out = ["## 🔎 API Contract Verification", ""]
     if report.claims_checked == 0:
         out += [
@@ -1043,6 +1100,9 @@ def render_markdown(report: Report, max_items: int = 50) -> str:
         f"| ❓ Uncertain | {report.count(UNCERTAIN)} |",
         "",
     ]
+    from health import render_health
+
+    out += render_health(report.health, history)
 
     def section(title, verdict, open_=True):
         items = [f for f in report.findings if f.verdict == verdict]
@@ -1055,6 +1115,10 @@ def render_markdown(report: Report, max_items: int = 50) -> str:
         for f in items[:max_items]:
             out.append(f"- **{f.claim.label}** — {f.message}")
             out.append(f"  `{f.claim.file}:{f.claim.line}` · evidence: `{f.evidence}`")
+            if f.fix:
+                out.append(f"  💡 Suggested fix: {f.fix}")
+            if f.ai_fix:
+                out.append(f"  🤖 AI-suggested rewrite (review before use): {f.ai_fix}")
         if len(items) > max_items:
             out.append(f"- … and {len(items) - max_items} more")
         if not open_:
@@ -1140,6 +1204,8 @@ def run_from_env(post: bool = True) -> Report | None:
         doc_roots = ["."]
         root = Path(".")
     report = verify_docs(spec, doc_roots, root)
+    if "--ai" in os.environ.get("COMMENT_BODY", "").lower():
+        apply_ai_rewrites(report)
     markdown = render_markdown(report)
     print(markdown)
     if post:
@@ -1156,6 +1222,10 @@ def main(argv: list[str] | None = None) -> int:
     src.add_argument("--app", help="FastAPI app as 'package.module:app' (executes project code)")
     parser.add_argument("docs", nargs="*", default=["."], help="Markdown files or folders")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of Markdown")
+    parser.add_argument(
+        "--ai", action="store_true", help="Also draft AI rewrites (needs MODEL_API_BASE)"
+    )
+    parser.add_argument("--history", help="JSON file that keeps the health score over time")
     args = parser.parse_args(argv)
     try:
         if args.app:
@@ -1170,7 +1240,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 2
     report = verify_docs(spec, args.docs)
-    print(json.dumps(report.to_dict(), indent=2) if args.json else render_markdown(report))
+    if args.ai:
+        apply_ai_rewrites(report)
+    history = None
+    if args.history:
+        from health import append_history
+
+        history = append_history(args.history, report.health)
+    print(
+        json.dumps(report.to_dict(), indent=2)
+        if args.json
+        else render_markdown(report, history=history)
+    )
     return 1 if report.has_contradictions else 0
 
 
