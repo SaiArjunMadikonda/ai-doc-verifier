@@ -1,7 +1,7 @@
 """
 Main orchestrator for code-to-docs GitHub Action.
 
-Detects the command mode ([review-docs], [update-docs], [review-feature]),
+Detects the command mode ([review-docs], [update-docs], [review-feature], [verify-api]),
 coordinates file discovery, content generation, and PR/comment posting.
 
 All business logic lives in dedicated modules:
@@ -237,6 +237,13 @@ def main():
         help="Max parallel workers for update generation (default: 5)",
     )
     args = parser.parse_args()
+
+    # [verify-api] is deterministic (no LLM, no index), so handle it before any model setup.
+    if "[verify-api]" in os.environ.get("COMMENT_BODY", "").lower():
+        from api_contract import run_from_env
+
+        run_from_env(post=not args.dry_run)
+        return
 
     # Log context budget once at startup
     budget = get_max_context_chars()

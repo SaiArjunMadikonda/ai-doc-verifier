@@ -13,6 +13,7 @@ Comment on any Pull Request:
 - **`[review-docs]`** - Analyzes code changes, identifies relevant doc files, and posts a review comment with checkboxes to accept or reject each suggestion
 - **`[update-docs]`** - Creates a docs PR with only the accepted files from a previous review (or runs the full pipeline if no review exists)
 - **`[review-feature] PROJ-123`** - Runs `[review-docs]` and adds a **Spec vs Code Analysis** section that fetches the Jira ticket and its linked spec docs (Confluence, Google Docs), compares requirements against the PR code changes, and identifies covered, missing, and unplanned changes
+- **`[verify-api]`** - Checks the API documentation against your OpenAPI spec (no LLM needed) and posts a report where every check is **verified**, **contradicted** (with evidence from the spec) or **uncertain**. See [API Contract Verification](#api-contract-verification)
 
 ### Recommended Workflow
 
@@ -110,7 +111,8 @@ jobs:
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
       (contains(github.event.comment.body, '[review-docs]') ||
        contains(github.event.comment.body, '[update-docs]') ||
-       contains(github.event.comment.body, '[review-feature]'))
+       contains(github.event.comment.body, '[review-feature]') ||
+       contains(github.event.comment.body, '[verify-api]'))
     steps:
       - name: Get PR information
         id: pr_info
@@ -224,6 +226,24 @@ Any OpenAI-compatible API works. Common examples:
 - 📚 **Format Support** - AsciiDoc, Markdown, and reStructuredText (.rst)
 - 🚀 **Optimized Performance** - Semantic indexes and cached summaries reduce API calls
 - 🔍 **Spec vs Code Analysis** - Compare PR changes against Jira spec docs to find covered, missing, and unplanned changes
+
+## API Contract Verification
+
+Comment `[verify-api]` on a PR to compare the documented API with the OpenAPI spec. The check is deterministic: no model is called.
+
+- **Spec**: set the `api-spec-path` input, or commit `openapi.json` / `openapi.yaml` (auto-detected in the repo root, `docs/` and `api/`). For FastAPI, generate it with `json.dumps(app.openapi())`.
+- **Docs**: the folder in `docs-subfolder` (plus `README.md`), or the separate docs repo. Markdown files are scanned for endpoints written as `GET /users/{id}` (headings, tables, bullets or prose), with the parameter tables/bullets and status codes that follow.
+- **Checks**: path and method exist; documented parameters exist with the same location, type and required flag (including request-body fields); documented response codes are defined.
+- **Verdicts**: ✅ verified, ❌ contradicted (the spec disagrees, evidence is a JSON pointer into the spec), ❓ uncertain (for example an unresolved `$ref`, a possible deployment prefix, or a `default` response). The report also lists required parameters missing from the docs and spec operations never mentioned.
+
+Run it locally:
+
+```bash
+python src/api_contract.py --spec openapi.json docs README.md
+python src/api_contract.py --app myproject.main:app docs   # imports and runs your FastAPI app
+```
+
+The exit code is `1` when something is contradicted, so it can also gate CI.
 
 ## Feature Review with [review-feature]
 

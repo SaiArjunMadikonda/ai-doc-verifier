@@ -46,7 +46,7 @@ inputs:
     required: false
     default: 'main'
   comment-body:
-    description: 'The comment body text (used to detect [review-docs], [update-docs], or [review-feature] commands)'
+    description: 'The comment body text (used to detect [review-docs], [update-docs], [review-feature], or [verify-api] commands)'
     required: false
     default: ''
   jira-url:
@@ -71,6 +71,10 @@ inputs:
     default: '400000'
   style-config-path:
     description: 'Path to a Markdown style configuration file (.md) containing documentation style guidelines. If not set, auto-detects .code-to-docs/style.md in the repository root.'
+    required: false
+    default: ''
+  api-spec-path:
+    description: 'Path to the OpenAPI spec (openapi.json / .yaml) used by [verify-api]. If empty, openapi.json/.yaml/.yml is auto-detected in the repository root, docs/ and api/.'
     required: false
     default: ''
 
@@ -104,3 +108,4 @@ runs:
     GOOGLE_SA_KEY: ${{ inputs.google-sa-key }}
     MAX_CONTEXT_CHARS: ${{ inputs.max-context-chars }}
     STYLE_CONFIG_PATH: ${{ inputs.style-config-path }}
+    API_SPEC_PATH: ${{ inputs.api-spec-path }}

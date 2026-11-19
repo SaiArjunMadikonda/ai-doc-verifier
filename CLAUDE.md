@@ -6,7 +6,7 @@ AI-powered GitHub Action that analyzes code changes and generates documentation 
 
 - **Entry point**: `entrypoint.sh` → `src/suggest_docs.py`
 - **Runs as**: Docker-based GitHub Action triggered by `issue_comment` events
-- **Commands**: `[review-docs]`, `[update-docs]`, `[review-feature] PROJ-123`
+- **Commands**: `[review-docs]`, `[update-docs]`, `[review-feature] PROJ-123`, `[verify-api]`
 
 ### Source modules (`src/`)
 
@@ -22,6 +22,7 @@ AI-powered GitHub Action that analyzes code changes and generates documentation 
 | `jira_integration.py` | Jira/Confluence/Google Docs integration for `[review-feature]` |
 | `security_utils.py` | Credential sanitization, safe subprocess execution, path validation |
 | `utils.py` | Retry logic, backoff calculations |
+| `api_contract.py` | `[verify-api]` — deterministic API Contract Verifier (OpenAPI spec vs Markdown docs); also a CLI |
 
 ## Development
 
