@@ -467,3 +467,30 @@ def test_parameter_type_behind_unresolved_ref_is_uncertain_not_verified():
     report = verify(extract_claims(md, "d.md"), Spec(data))
     got = {f.message.split("`")[1]: f.verdict for f in report.findings if f.check == "parameter"}
     assert got == {"q": UNCERTAIN, "n": VERIFIED}
+
+
+def _run_dispatch(monkeypatch, tmp_path, env):
+    import sys
+
+    import suggest_docs
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["suggest_docs.py", "--dry-run"])
+    for key in ("API_SPEC_PATH", "API_CODE_PATH", "DOCS_SUBFOLDER"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("COMMENT_BODY", "[verify-api]")
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    suggest_docs.main()
+
+
+def test_verify_api_command_fails_when_configured_spec_is_unreadable(tmp_path, monkeypatch):
+    with pytest.raises(SystemExit) as exc:
+        _run_dispatch(
+            monkeypatch, tmp_path, {"API_SPEC_PATH": "missing.json", "DOCS_SUBFOLDER": "."}
+        )
+    assert exc.value.code == 1
+
+
+def test_verify_api_command_without_any_api_definition_is_only_a_notice(tmp_path, monkeypatch):
+    _run_dispatch(monkeypatch, tmp_path, {"DOCS_SUBFOLDER": "."})  # nothing configured: no exit

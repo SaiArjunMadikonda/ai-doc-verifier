@@ -250,7 +250,13 @@ def main():
     if "[verify-api]" in os.environ.get("COMMENT_BODY", "").lower():
         from api_contract import run_from_env
 
-        run_from_env(post=not args.dry_run)
+        if run_from_env(post=not args.dry_run) is None and (
+            os.environ.get("API_SPEC_PATH", "").strip()
+            or os.environ.get("API_CODE_PATH", "").strip()
+        ):
+            # An API definition was configured explicitly but could not be used: do not let
+            # the check pass as if verification had happened.
+            sys.exit(1)
         return
 
     # Log context budget once at startup

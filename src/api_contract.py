@@ -1274,13 +1274,20 @@ def post_pr_comment(markdown: str) -> bool:
     token = os.environ.get("GH_TOKEN")
     if not pr_number or pr_number == "unknown" or not token:
         return False
-    msg_file = Path("/tmp/api_contract_report.md")
-    msg_file.write_text(markdown, encoding="utf-8")
-    run_command_safe(
-        ["gh", "pr", "comment", str(pr_number), "--body-file", str(msg_file)],
-        env={**os.environ, "GH_TOKEN": token},
-        check=False,
-    )
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".md", prefix="api_contract_report_", delete=False, encoding="utf-8"
+    ) as msg:
+        msg.write(markdown)
+    try:
+        run_command_safe(
+            ["gh", "pr", "comment", str(pr_number), "--body-file", msg.name],
+            env={**os.environ, "GH_TOKEN": token},
+            check=False,
+        )
+    finally:
+        Path(msg.name).unlink(missing_ok=True)
     return True
 
 
