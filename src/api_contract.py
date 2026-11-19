@@ -119,6 +119,10 @@ class Spec:
         self.base_paths = self._base_paths()
         self.operations: dict[tuple[str, str], Operation] = {}
         self._index: dict[str, str] = {}  # normalized path -> original spec path
+        self.generated_from_code = bool(data.get("x-generated-from-code"))
+        self.unknown_method_paths = {
+            normalize_path(p) for p in data.get("x-unknown-methods") or [] if isinstance(p, str)
+        }
         self._build()
 
     # -- construction ------------------------------------------------------
@@ -205,7 +209,7 @@ class Spec:
                     continue
                 pointer = f"#/paths/{_pointer_escape(raw_path)}/{method}"
                 operation = Operation(method.upper(), raw_path, pointer=pointer)
-                operation.unresolved = not ok
+                operation.unresolved = (not ok) or bool(op.get("x-unresolved"))
                 merged: dict[tuple[str, str], tuple[dict, str]] = {}
                 for i, p in enumerate(path_params):
                     pr, pok = self.resolve_ref(p)
@@ -383,6 +387,36 @@ def load_spec_from_fastapi(target: str, source: str = "app.openapi()") -> Spec:
         raise
     except Exception as e:
         raise SpecError(f"Could not build the spec from '{target}': {e}") from e
+
+
+def load_spec_from_code(root: str | os.PathLike = ".", frameworks: list[str] | None = None) -> Spec:
+    """Build a spec by *reading* the code (FastAPI, Flask, Django, Express). Nothing is run."""
+    from static_routes import StaticRouteError, extract_routes
+
+    try:
+        data = extract_routes(root, frameworks)
+    except StaticRouteError as e:
+        raise SpecError(str(e)) from e
+    return Spec(data, source=f"routes in {Path(root).name or 'code'}")
+
+
+def resolve_spec(
+    spec: str | os.PathLike | None = None,
+    code: str | os.PathLike | None = None,
+    app: str | None = None,
+    root: str | os.PathLike = ".",
+) -> Spec:
+    """Pick the best available source: explicit spec, FastAPI app, code, a spec file, then code."""
+    if spec:
+        return load_spec(spec)
+    if app:
+        return load_spec_from_fastapi(app)
+    if code:
+        return load_spec_from_code(code)
+    found = find_spec_file(root)
+    if found:
+        return load_spec(found)
+    return load_spec_from_code(root)
 
 
 def find_spec_file(root: str | os.PathLike = ".") -> Path | None:
@@ -886,6 +920,15 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
             f"#/paths/{_pointer_escape(spec_path)}",
         )
         return findings, op
+    if op is None and norm in spec.unknown_method_paths:
+        add(
+            UNCERTAIN,
+            "endpoint",
+            f"The code defines `{spec_path}` but its HTTP methods cannot be determined statically, "
+            f"so `{claim.method}` cannot be confirmed.",
+            f"{spec.source} (static analysis)",
+        )
+        return findings, None
     if op is None:
         defined = ", ".join(spec.methods_for(norm)) or "no operations"
         add(
@@ -1168,21 +1211,18 @@ def post_pr_comment(markdown: str) -> bool:
 def run_from_env(post: bool = True) -> Report | None:
     """Entry point for the ``[verify-api]`` command (no LLM involved)."""
     spec_env = os.environ.get("API_SPEC_PATH", "").strip()
-    spec_path = Path(spec_env) if spec_env else find_spec_file(".")
+    code_env = os.environ.get("API_CODE_PATH", "").strip()
     notice = None
     spec = None
-    if spec_path is None or not Path(spec_path).is_file():
+    try:
+        spec = resolve_spec(spec_env or None, code_env or None, None, ".")
+    except SpecError as e:
         notice = (
-            "Could not find an OpenAPI spec. Commit one as `openapi.json` / `openapi.yaml` "
+            f"{e}\n\nCommit an OpenAPI spec as `openapi.json` / `openapi.yaml` "
             '(for FastAPI: `python -c "import json; from app.main import app; '
-            'print(json.dumps(app.openapi()))" > openapi.json`) or set the `api-spec-path` input.'
+            'print(json.dumps(app.openapi()))" > openapi.json`), set the `api-spec-path` input, '
+            "or point `api-code-path` at the folder with the API code."
         )
-    else:
-        spec_path = Path(spec_path).resolve()
-        try:
-            spec = load_spec(spec_path)
-        except SpecError as e:
-            notice = str(e)
     if notice:
         print(f"API contract verification skipped: {notice}")
         if post:
@@ -1220,6 +1260,10 @@ def main(argv: list[str] | None = None) -> int:
     src = parser.add_mutually_exclusive_group()
     src.add_argument("--spec", help="Path to openapi.json / openapi.yaml")
     src.add_argument("--app", help="FastAPI app as 'package.module:app' (executes project code)")
+    src.add_argument(
+        "--code",
+        help="Folder with the API code (FastAPI/Flask/Django/Express); read statically, never run",
+    )
     parser.add_argument("docs", nargs="*", default=["."], help="Markdown files or folders")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of Markdown")
     parser.add_argument(
@@ -1228,14 +1272,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--history", help="JSON file that keeps the health score over time")
     args = parser.parse_args(argv)
     try:
-        if args.app:
-            spec = load_spec_from_fastapi(args.app)
-        else:
-            path = Path(args.spec) if args.spec else find_spec_file(".")
-            if path is None:
-                print("No spec found. Pass --spec or --app.", file=sys.stderr)
-                return 2
-            spec = load_spec(path)
+        spec = resolve_spec(args.spec, args.code, args.app, ".")
     except SpecError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2

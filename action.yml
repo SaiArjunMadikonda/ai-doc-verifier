@@ -77,6 +77,10 @@ inputs:
     description: 'Path to the OpenAPI spec (openapi.json / .yaml) used by [verify-api]. If empty, openapi.json/.yaml/.yml is auto-detected in the repository root, docs/ and api/.'
     required: false
     default: ''
+  api-code-path:
+    description: 'Folder with the API source code (FastAPI, Flask, Django, Express) that [verify-api] reads when no OpenAPI spec exists. Code is parsed, never executed.'
+    required: false
+    default: ''
 
 outputs:
   status:
@@ -109,3 +113,4 @@ runs:
     MAX_CONTEXT_CHARS: ${{ inputs.max-context-chars }}
     STYLE_CONFIG_PATH: ${{ inputs.style-config-path }}
     API_SPEC_PATH: ${{ inputs.api-spec-path }}
+    API_CODE_PATH: ${{ inputs.api-code-path }}

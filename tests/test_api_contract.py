@@ -419,7 +419,8 @@ def test_run_from_env_reports_missing_spec(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("API_SPEC_PATH", raising=False)
     assert ac.run_from_env(post=False) is None
-    assert "Could not find an OpenAPI spec" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "No supported web framework" in out and "api-code-path" in out
 
 
 def test_run_from_env_uses_docs_subfolder(tmp_path, monkeypatch):
