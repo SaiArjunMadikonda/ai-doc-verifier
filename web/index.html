@@ -6,141 +6,207 @@
 <title>Doc Check: does your documentation match your API?</title>
 <style>
   :root {
-    --paper: #edf0f2;
-    --sheet: #fbfcfc;
-    --ink: #17212b;
-    --muted: #5b6874;
-    --rule: #cbd3da;
-    --red: #b8322a;
-    --red-bg: #fbe9e7;
-    --green: #1c7a5c;
-    --green-bg: #e4f3ed;
-    --amber: #96640f;
-    --amber-bg: #fbf1dc;
-    --blue: #2a4a7c;
+    --paper: #e9edf1;
+    --sheet: #ffffff;
+    --wash: #f4f6f8;
+    --ink: #101c2c;
+    --muted: #55626f;
+    --rule: #cfd6dd;
+    --red: #c02d25;
+    --red-bg: #fdecea;
+    --green: #14795a;
+    --green-bg: #e3f4ed;
+    --amber: #965f08;
+    --amber-bg: #fcf1d9;
+    --blue: #2747a3;
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  html { scroll-padding-top: 84px; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 var(--sans); }
   button, textarea, select { font: inherit; color: inherit; }
   :focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  code { font-family: var(--mono); font-size: .92em; background: #e4e9ee; padding: 0 4px; border-radius: 3px; }
 
-  header { padding: 28px clamp(16px, 4vw, 48px) 20px; display: flex; flex-wrap: wrap; gap: 24px;
-    align-items: end; justify-content: space-between; border-bottom: 1px solid var(--rule); }
-  h1 { margin: 0; font: 600 clamp(26px, 4vw, 38px)/1.1 var(--serif); letter-spacing: -0.01em; max-width: 22ch; }
-  header p { margin: 8px 0 0; color: var(--muted); max-width: 52ch; }
+  /* ---- top bar: always visible, so the actions can never scroll away ---- */
+  .bar { position: sticky; top: 0; z-index: 5; background: var(--ink); color: #fff;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+    padding: 12px clamp(14px, 3vw, 40px); }
+  .brand { font: 600 20px/1 var(--serif); letter-spacing: .01em; margin-right: auto; display: flex; align-items: center; gap: 10px; }
+  .brand svg { flex: none; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .btn { padding: 8px 16px; border-radius: 5px; border: 1px solid transparent; cursor: pointer; font-weight: 600; white-space: nowrap; }
+  .btn.go { background: #fff; color: var(--ink); }
+  .btn.ghost { background: transparent; color: #fff; border-color: #ffffff55; font-weight: 500; }
+  .btn:hover { filter: brightness(.93); }
+  .btn.ghost:hover { background: #ffffff1a; filter: none; }
+  .btn[disabled] { opacity: .6; cursor: progress; }
+  .kbd { color: #ffffffaa; font-size: 12px; }
+  .bar select { background: transparent; color: #fff; border: 1px solid #ffffff55; border-radius: 5px; padding: 7px 8px; }
+  .bar select option { color: var(--ink); }
 
-  .score { text-align: right; min-width: 150px; }
-  .score b { display: block; font: 600 64px/1 var(--serif); font-variant-numeric: tabular-nums; }
-  .score span { color: var(--muted); font-size: 13px; }
-  .score[data-band="good"] b { color: var(--green); }
-  .score[data-band="mid"] b { color: var(--amber); }
-  .score[data-band="bad"] b { color: var(--red); }
+  .intro { padding: 26px clamp(14px, 3vw, 40px) 4px; max-width: 1500px; margin: 0 auto; }
+  .intro h1 { margin: 0; font: 600 clamp(24px, 3.2vw, 34px)/1.15 var(--serif); letter-spacing: -.01em; max-width: 30ch; }
+  .intro p { margin: 6px 0 0; color: var(--muted); max-width: 68ch; }
 
-  main { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 24px;
-    padding: 24px clamp(16px, 4vw, 48px) 56px; align-items: start; }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  main { display: grid; grid-template-columns: minmax(300px, 5fr) 7fr; gap: 22px;
+    padding: 18px clamp(14px, 3vw, 40px) 60px; max-width: 1500px; margin: 0 auto; align-items: start; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
 
-  .inputs { display: grid; gap: 16px; position: sticky; top: 16px; }
-  @media (max-width: 860px) { .inputs { position: static; } }
-  label { display: block; font-weight: 600; margin-bottom: 4px; }
-  .hint { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
-  textarea { width: 100%; height: 190px; padding: 10px; background: var(--sheet); border: 1px solid var(--rule);
-    border-radius: 4px; font: 13px/1.45 var(--mono); resize: vertical; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  select { padding: 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); }
-  .btn { padding: 9px 16px; border-radius: 4px; border: 1px solid var(--ink); background: var(--ink);
-    color: var(--sheet); cursor: pointer; font-weight: 600; }
-  .btn.quiet { background: transparent; color: var(--ink); border-color: var(--rule); font-weight: 500; }
-  .btn:hover { filter: brightness(1.15); }
-  .btn[disabled] { opacity: .55; cursor: progress; }
-  .note { color: var(--muted); font-size: 13px; }
+  /* ---- editor card ---- */
+  .editor { background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden;
+    position: sticky; top: 76px; }
+  @media (max-width: 960px) { .editor { position: static; } }
+  .tabs { display: flex; border-bottom: 1px solid var(--rule); background: var(--wash); }
+  .tab { flex: 1; padding: 11px 14px; border: 0; background: transparent; cursor: pointer; font-weight: 600; color: var(--muted);
+    border-bottom: 3px solid transparent; text-align: left; }
+  .tab small { display: block; font-weight: 400; font-size: 12px; }
+  .tab[aria-selected="true"] { color: var(--ink); background: var(--sheet); border-bottom-color: var(--ink); }
+  .pane[hidden] { display: none; }
+  textarea { display: block; width: 100%; height: min(58vh, 520px); min-height: 260px; padding: 12px 14px; border: 0;
+    font: 13px/1.5 var(--mono); resize: vertical; background: var(--sheet); tab-size: 2; }
+  textarea.drag { background: var(--amber-bg); }
+  .editor-foot { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px;
+    border-top: 1px solid var(--rule); background: var(--wash); font-size: 13px; color: var(--muted); }
+  .editor-foot .link { border: 0; background: none; color: var(--blue); cursor: pointer; padding: 0; text-decoration: underline; }
+  .editor-foot .count { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .privacy { margin: 10px 2px 0; font-size: 13px; color: var(--muted); }
 
-  .results { min-width: 0; }
-  .empty { border: 1px dashed var(--rule); border-radius: 6px; padding: 40px 24px; color: var(--muted); background: var(--sheet); }
-  .empty h2 { margin: 0 0 6px; font: 600 20px var(--serif); color: var(--ink); }
-  .error { border-left: 4px solid var(--red); background: var(--red-bg); padding: 12px 14px; border-radius: 0 4px 4px 0; }
+  /* ---- results ---- */
+  .results { min-width: 0; display: grid; gap: 18px; }
+  .panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; }
+  .error { border-left: 4px solid var(--red); background: var(--red-bg); padding: 12px 14px; border-radius: 0 6px 6px 0; }
 
-  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-  .chip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--rule); background: var(--sheet); cursor: pointer; }
-  .chip[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
-  .summary { margin: 0 0 14px; color: var(--muted); }
+  .summary { display: grid; grid-template-columns: auto 1fr; gap: 14px 26px; padding: 18px 20px; align-items: center; }
+  @media (max-width: 560px) { .summary { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
+  .ring { position: relative; width: 132px; height: 132px; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .num { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .ring b { font: 600 38px/1 var(--serif); font-variant-numeric: tabular-nums; }
+  .ring span { font-size: 12px; color: var(--muted); }
+  .ring[data-band="good"] { --c: var(--green); }
+  .ring[data-band="mid"] { --c: var(--amber); }
+  .ring[data-band="bad"] { --c: var(--red); }
+  .ring circle.fg { stroke: var(--c); }
+  .ring b { color: var(--c); }
+  .facts { width: 100%; min-width: 0; }
+  .facts h2 { margin: 0 0 4px; font: 600 20px/1.2 var(--serif); }
+  .facts p { margin: 0 0 12px; color: var(--muted); }
+  .split { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--rule); }
+  .split i { display: block; min-width: 0; }
+  .split .r { background: var(--red); } .split .a { background: #d99a2b; } .split .g { background: var(--green); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 14px; }
+  .legend b { font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  .dot.r { background: var(--red); } .dot.a { background: #d99a2b; } .dot.g { background: var(--green); }
 
-  .doc { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
-  .line { display: grid; grid-template-columns: 52px 1fr; font: 13px/1.6 var(--mono); }
-  .line .no { text-align: right; padding: 0 10px 0 0; color: #8793a0; user-select: none; border-right: 1px solid var(--rule); }
-  .line .txt { padding: 0 14px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.6em; }
+  table.by { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.by caption { text-align: left; padding: 12px 20px 4px; font: 600 16px var(--serif); }
+  table.by th, table.by td { padding: 7px 20px; text-align: right; font-variant-numeric: tabular-nums; }
+  table.by th:first-child, table.by td:first-child { text-align: left; }
+  table.by thead th { color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--rule); }
+  table.by tbody tr + tr td { border-top: 1px solid #e6ebf0; }
+  td.bad { color: var(--red); font-weight: 600; }
+
+  .first { padding: 14px 20px 16px; }
+  .first h3 { margin: 0 0 8px; font: 600 18px var(--serif); }
+  .first ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .first button { width: 100%; text-align: left; background: var(--red-bg); border: 0; border-left: 4px solid var(--red);
+    border-radius: 0 5px 5px 0; padding: 7px 12px; cursor: pointer; display: grid; grid-template-columns: 56px 1fr; gap: 8px; align-items: baseline; }
+  .first button:hover { background: #f9d9d5; }
+  .first .ln { font: 12px var(--mono); color: var(--red); }
+  .first .more { color: var(--muted); font-size: 13px; padding: 4px 2px; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filters .label { font-weight: 600; margin-right: 4px; }
+  .chip { padding: 6px 13px; border-radius: 999px; border: 1px solid var(--rule); background: var(--sheet); cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+  .doc { background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  .line { display: grid; grid-template-columns: 54px 1fr; font: 13px/1.65 var(--mono); }
+  .line .no { text-align: right; padding: 0 10px 0 0; color: #8793a0; user-select: none; border-right: 1px solid var(--rule); background: var(--wash); }
+  .line .txt { padding: 0 14px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.65em; }
   .line.bad .txt { background: var(--red-bg); text-decoration: underline wavy var(--red) 1px; text-underline-offset: 4px; }
   .line.unsure .txt { background: var(--amber-bg); text-decoration: underline dotted var(--amber) 2px; text-underline-offset: 4px; }
   .line.ok .no { color: var(--green); font-weight: 700; }
   .line.hidden { display: none; }
-
-  .notes { grid-column: 2; padding: 6px 14px 12px; font: 14px/1.5 var(--sans); display: grid; gap: 8px; }
-  .notes.hidden { display: none; }
-  .note-card { border-left: 4px solid var(--rule); padding: 6px 10px; background: #fff; border-radius: 0 4px 4px 0; }
-  .note-card.bad { border-color: var(--red); }
-  .note-card.unsure { border-color: var(--amber); }
-  .note-card.ok { border-color: var(--green); }
+  .line.jump .txt { animation: jump 1.4s ease-out; }
+  @keyframes jump { 0%, 40% { box-shadow: inset 0 0 0 2px var(--blue); } 100% { box-shadow: inset 0 0 0 2px transparent; } }
+  .notes { padding: 6px 14px 12px; font: 14px/1.5 var(--sans); display: grid; gap: 8px; }
+  .note-card { border-left: 4px solid var(--rule); padding: 7px 11px; background: var(--sheet); border-radius: 0 5px 5px 0; box-shadow: 0 0 0 1px #e1e7ec; }
+  .note-card.bad { border-color: var(--red); } .note-card.unsure { border-color: var(--amber); } .note-card.ok { border-color: var(--green); }
   .note-card .why { font-weight: 600; }
-  .note-card .ev, .note-card .fix { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-  .note-card .fix { color: var(--ink); }
-  code { font-family: var(--mono); font-size: .92em; background: #e8ecef; padding: 0 3px; border-radius: 3px; }
+  .note-card .ev { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .note-card .fix { font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-top: 2px; }
+  .copy { border: 1px solid var(--rule); background: var(--wash); border-radius: 4px; padding: 1px 8px; font-size: 12px; cursor: pointer; }
 
-  .gaps { margin-top: 18px; padding: 14px 16px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
-  .gaps h3 { margin: 0 0 6px; font: 600 17px var(--serif); }
+  .gaps { padding: 14px 20px 6px; }
+  .gaps h3 { margin: 0 0 4px; font: 600 18px var(--serif); }
+  .gaps p { margin: 8px 0 2px; color: var(--muted); font-size: 14px; }
   .gaps ul { margin: 0 0 10px; padding-left: 20px; }
 
-  @media (prefers-reduced-motion: no-preference) {
-    .score b { transition: color .3s; }
-    .doc.fresh .line.bad { animation: flash .9s ease-out; }
-    @keyframes flash { from { background: #f4b4ac; } }
-  }
+  /* ---- empty state: a worked example instead of a blank box ---- */
+  .welcome { padding: 22px 22px 20px; }
+  .welcome h2 { margin: 0; font: 600 24px/1.2 var(--serif); }
+  .welcome > p { margin: 6px 0 16px; color: var(--muted); max-width: 60ch; }
+  .sample { border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
+  .sample .line.note-row { grid-template-columns: 54px 1fr; }
+  .welcome .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .welcome .btn.go { background: var(--ink); color: #fff; }
+  .welcome .btn.ghost { color: var(--ink); border-color: var(--rule); }
+
+  @media (prefers-reduced-motion: reduce) { .line.jump .txt { animation: none; box-shadow: inset 0 0 0 2px var(--blue); } }
 </style>
 </head>
 <body>
-<header>
-  <div>
-    <h1>Does your documentation still match your API?</h1>
-    <p>Paste an OpenAPI spec and the docs that describe it. Each claim in the docs is marked verified, contradicted or uncertain, with the evidence.</p>
+<div class="bar">
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="3" y="2" width="16" height="22" rx="2" fill="none" stroke="#fff" stroke-width="2"/><path d="M7 9h8M7 13h5" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path d="M12 19l3 3 8-9" fill="none" stroke="#5fd3a8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Doc Check
   </div>
-  <div class="score" id="score" hidden aria-live="polite">
-    <b id="scoreNum">0</b>
-    <span>documentation health, out of 100</span>
+  <div class="actions">
+    <select id="format" aria-label="Documentation format">
+      <option value="md">Markdown</option>
+      <option value="rst">reStructuredText</option>
+      <option value="adoc">AsciiDoc</option>
+    </select>
+    <button class="btn ghost" id="demo">Load the demo</button>
+    <button class="btn go" id="run">Check documentation</button>
+    <span class="kbd" title="Keyboard shortcut">Ctrl+Enter</span>
   </div>
-</header>
+</div>
+
+<div class="intro">
+  <h1>Does your documentation still match your API?</h1>
+  <p>Paste an OpenAPI spec and the docs that describe it. Every claim in the docs is marked verified, contradicted or uncertain, with the evidence behind it.</p>
+</div>
 
 <main>
-  <section class="inputs" aria-label="Inputs">
-    <div>
-      <label for="spec">OpenAPI spec</label>
-      <p class="hint">JSON or YAML</p>
-      <textarea id="spec" spellcheck="false" placeholder='{"openapi": "3.1.0", "paths": { ... }}'></textarea>
+  <section aria-label="Inputs">
+    <div class="editor">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-spec" aria-controls="pane-spec" aria-selected="true">OpenAPI spec<small>JSON or YAML</small></button>
+        <button class="tab" role="tab" id="tab-docs" aria-controls="pane-docs" aria-selected="false">Documentation<small>Markdown, reStructuredText or AsciiDoc</small></button>
+      </div>
+      <div class="pane" id="pane-spec" role="tabpanel" aria-labelledby="tab-spec">
+        <textarea id="spec" spellcheck="false" aria-label="OpenAPI spec" placeholder='Paste your spec here, or drop a file.&#10;&#10;{"openapi": "3.1.0", "paths": { ... }}'></textarea>
+      </div>
+      <div class="pane" id="pane-docs" role="tabpanel" aria-labelledby="tab-docs" hidden>
+        <textarea id="docs" spellcheck="false" aria-label="Documentation" placeholder="Paste your docs here, or drop a file.&#10;&#10;### GET /users&#10;&#10;| Name | Type | Required |&#10;|---|---|---|"></textarea>
+      </div>
+      <div class="editor-foot">
+        <button class="link" id="open">Open a file</button>
+        <button class="link" id="clear">Clear</button>
+        <span class="count" id="count" aria-live="polite"></span>
+      </div>
+      <input type="file" id="file" hidden>
     </div>
-    <div>
-      <label for="docs">Documentation</label>
-      <p class="hint">Endpoints written like <code>GET /users/{id}</code>, with parameter tables and code examples</p>
-      <textarea id="docs" spellcheck="false" placeholder="### GET /users&#10;&#10;| Name | Type | Required |&#10;|---|---|---|"></textarea>
-    </div>
-    <div class="row">
-      <select id="format" aria-label="Documentation format">
-        <option value="md">Markdown</option>
-        <option value="rst">reStructuredText</option>
-        <option value="adoc">AsciiDoc</option>
-      </select>
-      <button class="btn" id="run">Check documentation</button>
-      <button class="btn quiet" id="demo">Load the demo</button>
-    </div>
-    <p class="note">Runs on this computer. The spec and docs are only read, never executed or uploaded. Environment variables, CLI flags and file references are checked from the command line: <code>python src/docaudit.py</code>.</p>
+    <p class="privacy">Everything runs on this computer. Your spec and docs are only read: nothing is executed or uploaded.</p>
   </section>
 
-  <section class="results" id="results" aria-live="polite">
-    <div class="empty">
-      <h2>Nothing checked yet</h2>
-      <p>Load the demo to see a shop API whose docs contain a dozen planted mistakes, or paste your own spec and docs and select Check documentation.</p>
-    </div>
-  </section>
+  <section class="results" id="results" aria-live="polite"></section>
 </main>
 
 <script>
@@ -149,9 +215,11 @@
   const results = $("results");
   let state = null;
   let filter = "all";
+  let activeTab = "spec";
 
   const KIND = { contradicted: "bad", uncertain: "unsure", verified: "ok" };
   const LABEL = { contradicted: "Contradicted", uncertain: "Uncertain", verified: "Verified" };
+  const CHECKS = { endpoint: "Endpoints", parameter: "Parameters", response: "Response codes", example: "Code examples", "example-response": "Sample responses" };
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -159,15 +227,61 @@
     if (text !== undefined) n.textContent = text;
     return n;
   }
-
-  // Render `text` with `backticked` parts as <code>, without ever using innerHTML.
+  // Text with `backticked` parts shown as <code>; never uses innerHTML.
   function rich(parent, text) {
-    text.split(/(`[^`]+`)/).forEach((part) => {
-      if (part.startsWith("`") && part.endsWith("`") && part.length > 2) parent.appendChild(el("code", "", part.slice(1, -1)));
+    String(text).split(/(`[^`]+`)/).forEach((part) => {
+      if (part.length > 2 && part.startsWith("`") && part.endsWith("`")) parent.appendChild(el("code", "", part.slice(1, -1)));
       else if (part) parent.appendChild(document.createTextNode(part));
     });
   }
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+  /* ---------- tabs and files ---------- */
+  function selectTab(name) {
+    activeTab = name;
+    ["spec", "docs"].forEach((t) => {
+      $("tab-" + t).setAttribute("aria-selected", String(t === name));
+      $("pane-" + t).hidden = t !== name;
+    });
+    updateCount();
+  }
+  function updateCount() {
+    const v = $(activeTab).value;
+    $("count").textContent = v ? `${plural(v.split("\n").length, "line")}, ${v.length.toLocaleString()} characters` : "Empty";
+  }
+  function loadText(target, text, name) {
+    $(target).value = text;
+    if (target === "docs" && name) {
+      const ext = name.split(".").pop().toLowerCase();
+      if (ext === "rst") $("format").value = "rst";
+      else if (ext === "adoc" || ext === "asciidoc") $("format").value = "adoc";
+      else if (ext === "md" || ext === "markdown") $("format").value = "md";
+    }
+    selectTab(target);
+  }
+  function readFile(file, target) {
+    const reader = new FileReader();
+    reader.onload = () => loadText(target, String(reader.result), file.name);
+    reader.readAsText(file);
+  }
+  ["spec", "docs"].forEach((t) => {
+    const area = $(t);
+    area.addEventListener("input", updateCount);
+    area.addEventListener("dragover", (e) => { e.preventDefault(); area.classList.add("drag"); });
+    area.addEventListener("dragleave", () => area.classList.remove("drag"));
+    area.addEventListener("drop", (e) => {
+      e.preventDefault(); area.classList.remove("drag");
+      if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0], t);
+    });
+  });
+  $("tab-spec").addEventListener("click", () => selectTab("spec"));
+  $("tab-docs").addEventListener("click", () => selectTab("docs"));
+  $("open").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", (e) => { if (e.target.files[0]) readFile(e.target.files[0], activeTab); e.target.value = ""; });
+  $("clear").addEventListener("click", () => { $(activeTab).value = ""; updateCount(); $(activeTab).focus(); });
+  document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); } });
+
+  /* ---------- server calls ---------- */
   function showError(message) {
     results.replaceChildren();
     const box = el("div", "error");
@@ -178,23 +292,25 @@
 
   async function run() {
     const btn = $("run");
-    btn.disabled = true;
-    btn.textContent = "Checking…";
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = "Checking…";
     try {
       const res = await fetch("/api/audit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spec: $("spec").value, docs: $("docs").value, format: $("format").value }),
       });
       const data = await res.json();
-      if (!res.ok) { $("score").hidden = true; return showError(data.error || "Unexpected error."); }
+      if (!res.ok) {
+        // Point the person at the box that needs attention.
+        if (/spec/i.test(data.error || "")) selectTab("spec"); else if (/docs|documentation/i.test(data.error || "")) selectTab("docs");
+        return showError(data.error || "Unexpected error.");
+      }
       state = data; filter = "all";
       render();
     } catch (e) {
       showError("The local server did not answer. Is python web/server.py still running?");
     } finally {
-      btn.disabled = false;
-      btn.textContent = "Check documentation";
+      btn.disabled = false; btn.textContent = "Check documentation";
     }
   }
 
@@ -204,121 +320,244 @@
       const d = await res.json();
       if (!res.ok) return showError(d.error || "Demo unavailable.");
       $("spec").value = d.spec; $("docs").value = d.docs; $("format").value = d.format;
+      selectTab("docs");
       run();
     } catch (e) { showError("The local server did not answer."); }
   }
 
-  function setScore(health) {
-    const box = $("score");
-    if (health.score === null || health.score === undefined) { box.hidden = true; return; }
-    box.hidden = false;
-    $("scoreNum").textContent = Math.round(health.score);
-    box.dataset.band = health.score >= 85 ? "good" : health.score >= 60 ? "mid" : "bad";
+  /* ---------- results ---------- */
+  function ring(score) {
+    const band = score >= 85 ? "good" : score >= 60 ? "mid" : "bad";
+    const box = el("div", "ring"); box.dataset.band = band;
+    const R = 56, C = 2 * Math.PI * R;
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("width", "132"); svg.setAttribute("height", "132"); svg.setAttribute("viewBox", "0 0 132 132");
+    svg.setAttribute("role", "img"); svg.setAttribute("aria-label", `Documentation health ${Math.round(score)} out of 100`);
+    [["bg", "#e1e7ec"], ["fg", ""]].forEach(([cls, stroke]) => {
+      const c = document.createElementNS(ns, "circle");
+      c.setAttribute("cx", "66"); c.setAttribute("cy", "66"); c.setAttribute("r", String(R));
+      c.setAttribute("fill", "none"); c.setAttribute("stroke-width", "12"); c.setAttribute("class", cls);
+      if (stroke) c.setAttribute("stroke", stroke);
+      else { c.setAttribute("stroke-linecap", "round"); c.setAttribute("stroke-dasharray", `${(C * score) / 100} ${C}`); }
+      svg.appendChild(c);
+    });
+    box.appendChild(svg);
+    const num = el("div", "num");
+    num.appendChild(el("b", "", String(Math.round(score))));
+    num.appendChild(el("span", "", "out of 100"));
+    box.appendChild(num);
+    return box;
   }
 
-  function render() {
-    setScore(state.health);
-    results.replaceChildren();
-    const s = state.summary;
-    if (!state.findings.length) {
-      const empty = el("div", "empty");
-      empty.appendChild(el("h2", "", "No endpoint claims found"));
-      empty.appendChild(el("p", "", "The checker looks for endpoints written like GET /users/{id} in headings, tables, lists or sentences. Add one and check again."));
-      const total = (state.undocumented_operations || []).length;
-      if (total) empty.appendChild(el("p", "", `Your spec defines ${total} operation(s), listed below. Each one is a good place to start documenting.`));
-      results.appendChild(empty);
-      renderGaps();
-      return;
-    }
-
-    const bar = el("div", "bar");
-    [["all", "Everything"], ["contradicted", `Contradicted (${s.contradicted})`],
-     ["uncertain", `Uncertain (${s.uncertain})`], ["verified", `Verified (${s.verified})`]].forEach(([key, text]) => {
-      const b = el("button", "chip", text);
-      b.setAttribute("aria-pressed", String(filter === key));
-      b.addEventListener("click", () => { filter = key; applyFilter(); bar.querySelectorAll(".chip").forEach((c, i) => c.setAttribute("aria-pressed", String(["all","contradicted","uncertain","verified"][i] === key))); });
-      bar.appendChild(b);
+  function summaryPanel() {
+    const s = state.summary, total = s.contradicted + s.uncertain + s.verified;
+    const panel = el("div", "panel summary");
+    const score = state.health && state.health.score;
+    if (score !== null && score !== undefined) panel.appendChild(ring(score)); else panel.style.gridTemplateColumns = "1fr";
+    const facts = el("div", "facts");
+    facts.appendChild(el("h2", "", s.contradicted ? `${plural(s.contradicted, "claim")} in the docs ${s.contradicted === 1 ? "is" : "are"} wrong` : "No wrong claims found"));
+    facts.appendChild(el("p", "", `${plural(state.claims_checked, "endpoint claim")} and ${plural(state.examples_checked, "example")} checked against ${plural(state.endpoints_in_spec, "operation")} in the spec.`));
+    const split = el("div", "split");
+    [["r", s.contradicted], ["a", s.uncertain], ["g", s.verified]].forEach(([c, n]) => {
+      if (!n) return; const seg = el("i", c); seg.style.flex = String(n); split.appendChild(seg);
     });
-    results.appendChild(bar);
+    split.setAttribute("role", "img");
+    split.setAttribute("aria-label", `${s.contradicted} contradicted, ${s.uncertain} uncertain, ${s.verified} verified, out of ${total}`);
+    facts.appendChild(split);
+    const legend = el("div", "legend");
+    [["r", "contradicted", s.contradicted], ["a", "uncertain", s.uncertain], ["g", "verified", s.verified]].forEach(([c, word, n]) => {
+      const item = el("span"); item.appendChild(el("i", "dot " + c));
+      item.appendChild(el("b", "", String(n))); item.appendChild(document.createTextNode(" " + word));
+      legend.appendChild(item);
+    });
+    facts.appendChild(legend);
+    panel.appendChild(facts);
+    return panel;
+  }
 
-    results.appendChild(el("p", "summary",
-      `${state.claims_checked} endpoint claim(s) and ${state.examples_checked} example(s) checked against ${state.endpoints_in_spec} operation(s) in the spec.`));
+  function breakdownPanel() {
+    const rows = {};
+    state.findings.forEach((f) => {
+      const r = rows[f.check] || (rows[f.check] = { contradicted: 0, uncertain: 0, verified: 0 });
+      r[f.verdict] += 1;
+    });
+    const keys = Object.keys(rows);
+    if (keys.length < 2) return null;
+    const table = el("table", "by panel");
+    table.appendChild(el("caption", "", "What was checked"));
+    const head = el("thead"); const hr = el("tr");
+    ["", "Verified", "Uncertain", "Contradicted"].forEach((h) => hr.appendChild(el("th", "", h)));
+    head.appendChild(hr); table.appendChild(head);
+    const body = el("tbody");
+    keys.forEach((k) => {
+      const tr = el("tr"); tr.appendChild(el("td", "", CHECKS[k] || k));
+      tr.appendChild(el("td", "", String(rows[k].verified)));
+      tr.appendChild(el("td", "", String(rows[k].uncertain)));
+      tr.appendChild(el("td", rows[k].contradicted ? "bad" : "", String(rows[k].contradicted)));
+      body.appendChild(tr);
+    });
+    table.appendChild(body);
+    return table;
+  }
 
+  function fixFirstPanel() {
+    const bad = state.findings.filter((f) => f.verdict === "contradicted").sort((a, b) => a.line - b.line);
+    if (!bad.length) return null;
+    const panel = el("div", "panel first");
+    panel.appendChild(el("h3", "", "Fix these first"));
+    const list = el("ol");
+    bad.slice(0, 8).forEach((f) => {
+      const li = el("li"); const b = el("button");
+      b.type = "button"; b.appendChild(el("span", "ln", "line " + f.line));
+      const msg = el("span"); rich(msg, f.message); b.appendChild(msg);
+      b.addEventListener("click", () => jumpTo(f.line));
+      li.appendChild(b); list.appendChild(li);
+    });
+    panel.appendChild(list);
+    if (bad.length > 8) panel.appendChild(el("div", "more", `and ${bad.length - 8} more, marked in the document below`));
+    return panel;
+  }
+
+  function jumpTo(n) {
+    filter = "all"; applyFilter();
+    const row = document.getElementById("line-" + n);
+    if (!row) return;
+    row.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+    row.classList.remove("jump"); void row.offsetWidth; row.classList.add("jump");
+  }
+
+  function noteCard(f) {
+    const card = el("div", "note-card " + KIND[f.verdict]);
+    card.dataset.verdict = f.verdict;
+    const why = el("div", "why");
+    why.appendChild(document.createTextNode(LABEL[f.verdict] + ": ")); rich(why, f.message);
+    card.appendChild(why);
+    if (f.evidence) { const ev = el("div", "ev"); ev.appendChild(document.createTextNode("Evidence: ")); rich(ev, f.evidence); card.appendChild(ev); }
+    if (f.fix) {
+      const fx = el("div", "fix");
+      const text = el("span"); text.appendChild(document.createTextNode("Suggested fix: ")); rich(text, f.fix); fx.appendChild(text);
+      const copy = el("button", "copy", "Copy fix"); copy.type = "button";
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(f.fix.replace(/`/g, "")); copy.textContent = "Copied"; }
+        catch (e) { copy.textContent = "Copy failed"; }
+        setTimeout(() => { copy.textContent = "Copy fix"; }, 1500);
+      });
+      fx.appendChild(copy); card.appendChild(fx);
+    }
+    return card;
+  }
+
+  function docView() {
     const byLine = new Map();
     state.findings.forEach((f) => { if (!byLine.has(f.line)) byLine.set(f.line, []); byLine.get(f.line).push(f); });
-
-    const doc = el("div", "doc fresh");
+    const doc = el("div", "doc");
     $("docs").value.split("\n").forEach((text, i) => {
-      const n = i + 1;
-      const found = byLine.get(n) || [];
+      const n = i + 1, found = byLine.get(n) || [];
       const worst = found.some((f) => f.verdict === "contradicted") ? "contradicted"
         : found.some((f) => f.verdict === "uncertain") ? "uncertain" : found.length ? "verified" : "";
-      const line = el("div", "line" + (worst ? " " + KIND[worst] : ""));
-      line.dataset.verdicts = [...new Set(found.map((f) => f.verdict))].join(" ");
+      const line = el("div", "line" + (worst ? " " + KIND[worst] : "")); line.id = "line-" + n;
       line.appendChild(el("div", "no", worst === "verified" ? "✓" : String(n)));
       line.appendChild(el("div", "txt", text));
+      doc.appendChild(line);
       if (found.length) {
-        const notes = el("div", "notes");
-        found.forEach((f) => {
-          const card = el("div", "note-card " + KIND[f.verdict]);
-          card.dataset.verdict = f.verdict;
-          const why = el("div", "why");
-          why.appendChild(document.createTextNode(LABEL[f.verdict] + ": "));
-          rich(why, f.message);
-          card.appendChild(why);
-          if (f.evidence) { const ev = el("div", "ev"); ev.appendChild(document.createTextNode("Evidence: ")); rich(ev, f.evidence); card.appendChild(ev); }
-          if (f.fix) { const fx = el("div", "fix"); fx.appendChild(document.createTextNode("Suggested fix: ")); rich(fx, f.fix); card.appendChild(fx); }
-          notes.appendChild(card);
-        });
-        const wrap = document.createDocumentFragment();
-        wrap.appendChild(line);
-        const row = el("div", "line notes-row");
-        row.appendChild(el("div", "no", ""));
-        row.appendChild(notes);
-        notes.style.gridColumn = "auto";
-        wrap.appendChild(row);
-        doc.appendChild(wrap);
-      } else {
-        doc.appendChild(line);
+        const row = el("div", "line notes-row"); row.appendChild(el("div", "no", ""));
+        const notes = el("div", "notes"); found.forEach((f) => notes.appendChild(noteCard(f)));
+        row.appendChild(notes); doc.appendChild(row);
       }
     });
-    results.appendChild(doc);
-
-    renderGaps();
-    applyFilter();
+    return doc;
   }
 
-  function renderGaps() {
-    const missing = state.missing_required_params || [];
-    const undocumented = state.undocumented_operations || [];
-    if (!missing.length && !undocumented.length) return;
-    const box = el("div", "gaps");
-    box.appendChild(el("h3", "", "Gaps in the documentation"));
+  function filterBar() {
+    const s = state.summary;
+    const bar = el("div", "filters"); bar.appendChild(el("span", "label", "Show"));
+    [["all", "Everything"], ["contradicted", `Contradicted (${s.contradicted})`], ["uncertain", `Uncertain (${s.uncertain})`], ["verified", `Verified (${s.verified})`]].forEach(([key, text]) => {
+      const b = el("button", "chip", text); b.type = "button"; b.dataset.key = key;
+      b.setAttribute("aria-pressed", String(filter === key));
+      b.addEventListener("click", () => { filter = key; applyFilter(); });
+      bar.appendChild(b);
+    });
+    return bar;
+  }
+
+  function gapsPanel() {
+    const missing = state.missing_required_params || [], undocumented = state.undocumented_operations || [];
+    if (!missing.length && !undocumented.length) return null;
+    const box = el("div", "panel gaps"); box.appendChild(el("h3", "", "Gaps in the documentation"));
     const list = (intro, items) => {
-      box.appendChild(el("p", "note", intro));
-      const ul = el("ul");
-      items.forEach((t) => { const li = el("li"); rich(li, t); ul.appendChild(li); });
-      box.appendChild(ul);
+      box.appendChild(el("p", "", intro));
+      const ul = el("ul"); items.forEach((t) => { const li = el("li"); rich(li, t); ul.appendChild(li); }); box.appendChild(ul);
     };
     if (missing.length) list("Required parameters the docs never mention", missing);
     if (undocumented.length) list("Operations in the spec that no doc page describes", undocumented);
-    results.appendChild(box);
+    return box;
+  }
+
+  function render() {
+    results.replaceChildren();
+    const gaps = gapsPanel();
+    if (!state.findings.length) {
+      const empty = el("div", "panel welcome");
+      empty.appendChild(el("h2", "", "No endpoint claims found"));
+      const total = (state.undocumented_operations || []).length;
+      empty.appendChild(el("p", "", "The checker looks for endpoints written like GET /users/{id} in headings, tables, lists or sentences. Add one and check again." +
+        (total ? ` Your spec defines ${plural(total, "operation")}, listed below. Each one is a good place to start documenting.` : "")));
+      results.appendChild(empty);
+      if (gaps) results.appendChild(gaps);
+      return;
+    }
+    results.appendChild(summaryPanel());
+    const first = fixFirstPanel(); if (first) results.appendChild(first);
+    const by = breakdownPanel(); if (by) results.appendChild(by);
+    results.appendChild(filterBar());
+    results.appendChild(docView());
+    if (gaps) results.appendChild(gaps);
+    applyFilter();
   }
 
   function applyFilter() {
-    const lines = results.querySelectorAll(".doc > .line, .doc > * > .line");
+    results.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.key === filter)));
     results.querySelectorAll(".note-card").forEach((c) => { c.hidden = filter !== "all" && c.dataset.verdict !== filter; });
-    results.querySelectorAll(".line").forEach((l) => {
-      if (l.classList.contains("notes-row")) {
-        const visible = [...l.querySelectorAll(".note-card")].some((c) => !c.hidden);
-        l.classList.toggle("hidden", !visible);
-      }
+    results.querySelectorAll(".notes-row").forEach((row) => {
+      row.classList.toggle("hidden", ![...row.querySelectorAll(".note-card")].some((c) => !c.hidden));
     });
-    void lines;
+  }
+
+  /* ---------- first screen: a worked example ---------- */
+  function welcome() {
+    const box = el("div", "panel welcome");
+    box.appendChild(el("h2", "", "This is what a check looks like"));
+    box.appendChild(el("p", "", "Each line of your docs that makes a claim gets marked. Wrong claims are underlined in red, with the evidence and a suggested fix underneath."));
+    const sample = el("div", "sample");
+    const rows = [
+      ["1", "### GET /usres", "bad"],
+      ["2", "", ""],
+      ["3", "Returns a list of users.", ""],
+    ];
+    rows.forEach(([n, text, kind]) => {
+      const line = el("div", "line" + (kind ? " " + kind : ""));
+      line.appendChild(el("div", "no", n)); line.appendChild(el("div", "txt", text)); sample.appendChild(line);
+    });
+    const note = el("div", "line"); note.appendChild(el("div", "no", ""));
+    const notes = el("div", "notes");
+    const card = el("div", "note-card bad");
+    const why = el("div", "why"); why.appendChild(document.createTextNode("Contradicted: ")); rich(why, "`GET /usres` is not defined in the spec."); card.appendChild(why);
+    const fx = el("div", "fix"); const fxText = el("span"); fxText.appendChild(document.createTextNode("Suggested fix: ")); rich(fxText, "Change the path to `/users`."); fx.appendChild(fxText); card.appendChild(fx);
+    notes.appendChild(card); note.appendChild(notes); sample.appendChild(note);
+    box.appendChild(sample);
+    const cta = el("div", "cta");
+    const demo = el("button", "btn go", "Try the demo"); demo.type = "button"; demo.addEventListener("click", loadDemo);
+    cta.appendChild(demo);
+    cta.appendChild(el("span", "", "A shop API whose docs contain planted mistakes, or paste your own spec and docs on the left."));
+    box.appendChild(cta);
+    return box;
   }
 
   $("run").addEventListener("click", run);
   $("demo").addEventListener("click", loadDemo);
+  results.appendChild(welcome());
+  updateCount();
 })();
 </script>
 </body>
