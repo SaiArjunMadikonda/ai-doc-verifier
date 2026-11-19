@@ -494,3 +494,24 @@ def test_verify_api_command_fails_when_configured_spec_is_unreadable(tmp_path, m
 
 def test_verify_api_command_without_any_api_definition_is_only_a_notice(tmp_path, monkeypatch):
     _run_dispatch(monkeypatch, tmp_path, {"DOCS_SUBFOLDER": "."})  # nothing configured: no exit
+
+
+def test_post_pr_comment_reports_gh_failure(monkeypatch):
+    import subprocess
+
+    import security_utils
+
+    monkeypatch.setenv("PR_NUMBER", "7")
+    monkeypatch.setenv("GH_TOKEN", "t")
+    monkeypatch.setattr(
+        security_utils,
+        "run_command_safe",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "boom"),
+    )
+    assert ac.post_pr_comment("x") is False
+    monkeypatch.setattr(
+        security_utils,
+        "run_command_safe",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, "", ""),
+    )
+    assert ac.post_pr_comment("x") is True

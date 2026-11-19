@@ -1281,13 +1281,21 @@ def post_pr_comment(markdown: str) -> bool:
     ) as msg:
         msg.write(markdown)
     try:
-        run_command_safe(
+        result = run_command_safe(
             ["gh", "pr", "comment", str(pr_number), "--body-file", msg.name],
             env={**os.environ, "GH_TOKEN": token},
             check=False,
         )
+    except OSError as e:  # gh not installed or not runnable
+        print(f"Could not post the PR comment: {e}")
+        return False
     finally:
         Path(msg.name).unlink(missing_ok=True)
+    if result.returncode != 0:
+        print(
+            f"Could not post the PR comment (gh exited {result.returncode}): {(result.stderr or '').strip()[:300]}"
+        )
+        return False
     return True
 
 
