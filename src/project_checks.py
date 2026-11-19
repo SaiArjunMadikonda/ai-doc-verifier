@@ -587,6 +587,14 @@ def _resolve_path(rel: str, doc_dir: str, idx: RepoIndex) -> str | None:
     return None
 
 
+def _suggest_path(target: str, idx: RepoIndex) -> str | None:
+    """A likely intended file: a near-identical path, or a near-identical name with the same extension."""
+    stem, ext = os.path.splitext(target.rsplit("/", 1)[-1])
+    stems = {os.path.splitext(b)[0]: rel for b, rel in idx.basenames.items() if b.endswith(ext)}
+    near = difflib.get_close_matches(stem, sorted(stems), n=1, cutoff=0.8)
+    return stems[near[0]] if near else None
+
+
 def _looks_like_path(span: str) -> bool:
     if (
         not re.fullmatch(r"[\w.@\-/]+", span)
@@ -634,13 +642,10 @@ def check_references(lines, file, idx, linemap) -> list[ProjectFinding]:
                 )
             )
         else:
-            hints = difflib.get_close_matches(target, sorted(idx.files), n=1, cutoff=0.7)
-            hints = hints or difflib.get_close_matches(
-                target.rsplit("/", 1)[-1], sorted(idx.basenames), n=1, cutoff=0.75
-            )
+            suggestion = _suggest_path(target, idx)
             fix = (
-                f"Did you mean `{idx.basenames.get(hints[0], hints[0]) if hints and hints[0] in idx.basenames else hints[0]}`?"
-                if hints
+                f"Did you mean `{suggestion}`?"
+                if suggestion
                 else f"Fix or remove the reference to {subject}."
             )
             out.append(

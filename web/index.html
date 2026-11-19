@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Check: does your documentation match your API?</title>
+<style>
+  :root {
+    --paper: #edf0f2;
+    --sheet: #fbfcfc;
+    --ink: #17212b;
+    --muted: #5b6874;
+    --rule: #cbd3da;
+    --red: #b8322a;
+    --red-bg: #fbe9e7;
+    --green: #1c7a5c;
+    --green-bg: #e4f3ed;
+    --amber: #96640f;
+    --amber-bg: #fbf1dc;
+    --blue: #2a4a7c;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 var(--sans); }
+  button, textarea, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+  header { padding: 28px clamp(16px, 4vw, 48px) 20px; display: flex; flex-wrap: wrap; gap: 24px;
+    align-items: end; justify-content: space-between; border-bottom: 1px solid var(--rule); }
+  h1 { margin: 0; font: 600 clamp(26px, 4vw, 38px)/1.1 var(--serif); letter-spacing: -0.01em; max-width: 22ch; }
+  header p { margin: 8px 0 0; color: var(--muted); max-width: 52ch; }
+
+  .score { text-align: right; min-width: 150px; }
+  .score b { display: block; font: 600 64px/1 var(--serif); font-variant-numeric: tabular-nums; }
+  .score span { color: var(--muted); font-size: 13px; }
+  .score[data-band="good"] b { color: var(--green); }
+  .score[data-band="mid"] b { color: var(--amber); }
+  .score[data-band="bad"] b { color: var(--red); }
+
+  main { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 24px;
+    padding: 24px clamp(16px, 4vw, 48px) 56px; align-items: start; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  .inputs { display: grid; gap: 16px; position: sticky; top: 16px; }
+  @media (max-width: 860px) { .inputs { position: static; } }
+  label { display: block; font-weight: 600; margin-bottom: 4px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
+  textarea { width: 100%; height: 190px; padding: 10px; background: var(--sheet); border: 1px solid var(--rule);
+    border-radius: 4px; font: 13px/1.45 var(--mono); resize: vertical; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  select { padding: 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); }
+  .btn { padding: 9px 16px; border-radius: 4px; border: 1px solid var(--ink); background: var(--ink);
+    color: var(--sheet); cursor: pointer; font-weight: 600; }
+  .btn.quiet { background: transparent; color: var(--ink); border-color: var(--rule); font-weight: 500; }
+  .btn:hover { filter: brightness(1.15); }
+  .btn[disabled] { opacity: .55; cursor: progress; }
+  .note { color: var(--muted); font-size: 13px; }
+
+  .results { min-width: 0; }
+  .empty { border: 1px dashed var(--rule); border-radius: 6px; padding: 40px 24px; color: var(--muted); background: var(--sheet); }
+  .empty h2 { margin: 0 0 6px; font: 600 20px var(--serif); color: var(--ink); }
+  .error { border-left: 4px solid var(--red); background: var(--red-bg); padding: 12px 14px; border-radius: 0 4px 4px 0; }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .chip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--rule); background: var(--sheet); cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+  .summary { margin: 0 0 14px; color: var(--muted); }
+
+  .doc { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+  .line { display: grid; grid-template-columns: 52px 1fr; font: 13px/1.6 var(--mono); }
+  .line .no { text-align: right; padding: 0 10px 0 0; color: #8793a0; user-select: none; border-right: 1px solid var(--rule); }
+  .line .txt { padding: 0 14px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.6em; }
+  .line.bad .txt { background: var(--red-bg); text-decoration: underline wavy var(--red) 1px; text-underline-offset: 4px; }
+  .line.unsure .txt { background: var(--amber-bg); text-decoration: underline dotted var(--amber) 2px; text-underline-offset: 4px; }
+  .line.ok .no { color: var(--green); font-weight: 700; }
+  .line.hidden { display: none; }
+
+  .notes { grid-column: 2; padding: 6px 14px 12px; font: 14px/1.5 var(--sans); display: grid; gap: 8px; }
+  .notes.hidden { display: none; }
+  .note-card { border-left: 4px solid var(--rule); padding: 6px 10px; background: #fff; border-radius: 0 4px 4px 0; }
+  .note-card.bad { border-color: var(--red); }
+  .note-card.unsure { border-color: var(--amber); }
+  .note-card.ok { border-color: var(--green); }
+  .note-card .why { font-weight: 600; }
+  .note-card .ev, .note-card .fix { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .note-card .fix { color: var(--ink); }
+  code { font-family: var(--mono); font-size: .92em; background: #e8ecef; padding: 0 3px; border-radius: 3px; }
+
+  .gaps { margin-top: 18px; padding: 14px 16px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+  .gaps h3 { margin: 0 0 6px; font: 600 17px var(--serif); }
+  .gaps ul { margin: 0 0 10px; padding-left: 20px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .score b { transition: color .3s; }
+    .doc.fresh .line.bad { animation: flash .9s ease-out; }
+    @keyframes flash { from { background: #f4b4ac; } }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Does your documentation still match your API?</h1>
+    <p>Paste an OpenAPI spec and the docs that describe it. Each claim in the docs is marked verified, contradicted or uncertain, with the evidence.</p>
+  </div>
+  <div class="score" id="score" hidden aria-live="polite">
+    <b id="scoreNum">0</b>
+    <span>documentation health, out of 100</span>
+  </div>
+</header>
+
+<main>
+  <section class="inputs" aria-label="Inputs">
+    <div>
+      <label for="spec">OpenAPI spec</label>
+      <p class="hint">JSON or YAML</p>
+      <textarea id="spec" spellcheck="false" placeholder='{"openapi": "3.1.0", "paths": { ... }}'></textarea>
+    </div>
+    <div>
+      <label for="docs">Documentation</label>
+      <p class="hint">Endpoints written like <code>GET /users/{id}</code>, with parameter tables and code examples</p>
+      <textarea id="docs" spellcheck="false" placeholder="### GET /users&#10;&#10;| Name | Type | Required |&#10;|---|---|---|"></textarea>
+    </div>
+    <div class="row">
+      <select id="format" aria-label="Documentation format">
+        <option value="md">Markdown</option>
+        <option value="rst">reStructuredText</option>
+        <option value="adoc">AsciiDoc</option>
+      </select>
+      <button class="btn" id="run">Check documentation</button>
+      <button class="btn quiet" id="demo">Load the demo</button>
+    </div>
+    <p class="note">Runs on this computer. The spec and docs are only read, never executed or uploaded. Environment variables, CLI flags and file references are checked from the command line: <code>python src/docaudit.py</code>.</p>
+  </section>
+
+  <section class="results" id="results" aria-live="polite">
+    <div class="empty">
+      <h2>Nothing checked yet</h2>
+      <p>Load the demo to see a shop API whose docs contain a dozen planted mistakes, or paste your own spec and docs and select Check documentation.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const results = $("results");
+  let state = null;
+  let filter = "all";
+
+  const KIND = { contradicted: "bad", uncertain: "unsure", verified: "ok" };
+  const LABEL = { contradicted: "Contradicted", uncertain: "Uncertain", verified: "Verified" };
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+
+  // Render `text` with `backticked` parts as <code>, without ever using innerHTML.
+  function rich(parent, text) {
+    text.split(/(`[^`]+`)/).forEach((part) => {
+      if (part.startsWith("`") && part.endsWith("`") && part.length > 2) parent.appendChild(el("code", "", part.slice(1, -1)));
+      else if (part) parent.appendChild(document.createTextNode(part));
+    });
+  }
+
+  function showError(message) {
+    results.replaceChildren();
+    const box = el("div", "error");
+    box.appendChild(el("strong", "", "Could not check the documentation. "));
+    box.appendChild(document.createTextNode(message));
+    results.appendChild(box);
+  }
+
+  async function run() {
+    const btn = $("run");
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+    try {
+      const res = await fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: $("spec").value, docs: $("docs").value, format: $("format").value }),
+      });
+      const data = await res.json();
+      if (!res.ok) { $("score").hidden = true; return showError(data.error || "Unexpected error."); }
+      state = data; filter = "all";
+      render();
+    } catch (e) {
+      showError("The local server did not answer. Is python web/server.py still running?");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Check documentation";
+    }
+  }
+
+  async function loadDemo() {
+    try {
+      const res = await fetch("/api/demo");
+      const d = await res.json();
+      if (!res.ok) return showError(d.error || "Demo unavailable.");
+      $("spec").value = d.spec; $("docs").value = d.docs; $("format").value = d.format;
+      run();
+    } catch (e) { showError("The local server did not answer."); }
+  }
+
+  function setScore(health) {
+    const box = $("score");
+    if (health.score === null || health.score === undefined) { box.hidden = true; return; }
+    box.hidden = false;
+    $("scoreNum").textContent = Math.round(health.score);
+    box.dataset.band = health.score >= 85 ? "good" : health.score >= 60 ? "mid" : "bad";
+  }
+
+  function render() {
+    setScore(state.health);
+    results.replaceChildren();
+    const s = state.summary;
+    if (!state.findings.length) {
+      const empty = el("div", "empty");
+      empty.appendChild(el("h2", "", "No endpoint claims found"));
+      empty.appendChild(el("p", "", "The checker looks for endpoints written like GET /users/{id} in headings, tables, lists or sentences. Add one and check again."));
+      results.appendChild(empty);
+      return;
+    }
+
+    const bar = el("div", "bar");
+    [["all", "Everything"], ["contradicted", `Contradicted (${s.contradicted})`],
+     ["uncertain", `Uncertain (${s.uncertain})`], ["verified", `Verified (${s.verified})`]].forEach(([key, text]) => {
+      const b = el("button", "chip", text);
+      b.setAttribute("aria-pressed", String(filter === key));
+      b.addEventListener("click", () => { filter = key; applyFilter(); bar.querySelectorAll(".chip").forEach((c, i) => c.setAttribute("aria-pressed", String(["all","contradicted","uncertain","verified"][i] === key))); });
+      bar.appendChild(b);
+    });
+    results.appendChild(bar);
+
+    results.appendChild(el("p", "summary",
+      `${state.claims_checked} endpoint claim(s) and ${state.examples_checked} example(s) checked against ${state.endpoints_in_spec} operation(s) in the spec.`));
+
+    const byLine = new Map();
+    state.findings.forEach((f) => { if (!byLine.has(f.line)) byLine.set(f.line, []); byLine.get(f.line).push(f); });
+
+    const doc = el("div", "doc fresh");
+    $("docs").value.split("\n").forEach((text, i) => {
+      const n = i + 1;
+      const found = byLine.get(n) || [];
+      const worst = found.some((f) => f.verdict === "contradicted") ? "contradicted"
+        : found.some((f) => f.verdict === "uncertain") ? "uncertain" : found.length ? "verified" : "";
+      const line = el("div", "line" + (worst ? " " + KIND[worst] : ""));
+      line.dataset.verdicts = [...new Set(found.map((f) => f.verdict))].join(" ");
+      line.appendChild(el("div", "no", worst === "verified" ? "✓" : String(n)));
+      line.appendChild(el("div", "txt", text));
+      if (found.length) {
+        const notes = el("div", "notes");
+        found.forEach((f) => {
+          const card = el("div", "note-card " + KIND[f.verdict]);
+          card.dataset.verdict = f.verdict;
+          const why = el("div", "why");
+          why.appendChild(document.createTextNode(LABEL[f.verdict] + ": "));
+          rich(why, f.message);
+          card.appendChild(why);
+          if (f.evidence) { const ev = el("div", "ev"); ev.appendChild(document.createTextNode("Evidence: ")); rich(ev, f.evidence); card.appendChild(ev); }
+          if (f.fix) { const fx = el("div", "fix"); fx.appendChild(document.createTextNode("Suggested fix: ")); rich(fx, f.fix); card.appendChild(fx); }
+          notes.appendChild(card);
+        });
+        const wrap = document.createDocumentFragment();
+        wrap.appendChild(line);
+        const row = el("div", "line notes-row");
+        row.appendChild(el("div", "no", ""));
+        row.appendChild(notes);
+        notes.style.gridColumn = "auto";
+        wrap.appendChild(row);
+        doc.appendChild(wrap);
+      } else {
+        doc.appendChild(line);
+      }
+    });
+    results.appendChild(doc);
+
+    const gaps = [...(state.missing_required_params || []), ...(state.undocumented_operations || [])];
+    if (gaps.length) {
+      const box = el("div", "gaps");
+      box.appendChild(el("h3", "", "Gaps in the documentation"));
+      if (state.missing_required_params.length) {
+        box.appendChild(el("p", "note", "Required parameters the docs never mention"));
+        const ul = el("ul"); state.missing_required_params.forEach((t) => { const li = el("li"); rich(li, t); ul.appendChild(li); }); box.appendChild(ul);
+      }
+      if (state.undocumented_operations.length) {
+        box.appendChild(el("p", "note", "Operations in the spec that no doc page describes"));
+        const ul = el("ul"); state.undocumented_operations.forEach((t) => { const li = el("li"); rich(li, t); ul.appendChild(li); }); box.appendChild(ul);
+      }
+      results.appendChild(box);
+    }
+    applyFilter();
+  }
+
+  function applyFilter() {
+    const lines = results.querySelectorAll(".doc > .line, .doc > * > .line");
+    results.querySelectorAll(".note-card").forEach((c) => { c.hidden = filter !== "all" && c.dataset.verdict !== filter; });
+    results.querySelectorAll(".line").forEach((l) => {
+      if (l.classList.contains("notes-row")) {
+        const visible = [...l.querySelectorAll(".note-card")].some((c) => !c.hidden);
+        l.classList.toggle("hidden", !visible);
+      }
+    });
+    void lines;
+  }
+
+  $("run").addEventListener("click", run);
+  $("demo").addEventListener("click", loadDemo);
+})();
+</script>
+</body>
+</html>
