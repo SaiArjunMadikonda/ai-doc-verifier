@@ -13,6 +13,7 @@ Comment on any Pull Request:
 - **`[review-docs]`** - Analyzes code changes, identifies relevant doc files, and posts a review comment with checkboxes to accept or reject each suggestion
 - **`[update-docs]`** - Creates a docs PR with only the accepted files from a previous review (or runs the full pipeline if no review exists)
 - **`[review-feature] PROJ-123`** - Runs `[review-docs]` and adds a **Spec vs Code Analysis** section that fetches the Jira ticket and its linked spec docs (Confluence, Google Docs), compares requirements against the PR code changes, and identifies covered, missing, and unplanned changes
+- **`[verify-docs]`** - Runs every deterministic check (API contract, code examples, env vars, CLI flags, file/function references, version claims) and posts one report with a combined health score. No LLM needed. See [Documentation Audit](#documentation-audit)
 - **`[verify-api]`** - Checks the API documentation against your OpenAPI spec (no LLM needed) and posts a report where every check is **verified**, **contradicted** (with evidence from the spec) or **uncertain**. See [API Contract Verification](#api-contract-verification)
 
 ### Recommended Workflow
@@ -112,7 +113,8 @@ jobs:
       (contains(github.event.comment.body, '[review-docs]') ||
        contains(github.event.comment.body, '[update-docs]') ||
        contains(github.event.comment.body, '[review-feature]') ||
-       contains(github.event.comment.body, '[verify-api]'))
+       contains(github.event.comment.body, '[verify-api]') ||
+       contains(github.event.comment.body, '[verify-docs]'))
     steps:
       - name: Get PR information
         id: pr_info
@@ -229,21 +231,67 @@ Any OpenAI-compatible API works. Common examples:
 
 ## API Contract Verification
 
-Comment `[verify-api]` on a PR to compare the documented API with the OpenAPI spec. The check is deterministic: no model is called.
+Comment `[verify-api]` on a PR to compare the documented API with its definition. The check is deterministic: no model is called, and your code is never executed.
 
-- **Spec**: set the `api-spec-path` input, or commit `openapi.json` / `openapi.yaml` (auto-detected in the repo root, `docs/` and `api/`). For FastAPI, generate it with `json.dumps(app.openapi())`.
-- **Docs**: the folder in `docs-subfolder` (plus `README.md`), or the separate docs repo. Markdown files are scanned for endpoints written as `GET /users/{id}` (headings, tables, bullets or prose), with the parameter tables/bullets and status codes that follow.
-- **Checks**: path and method exist; documented parameters exist with the same location, type and required flag (including request-body fields); documented response codes are defined.
-- **Verdicts**: ✅ verified, ❌ contradicted (the spec disagrees, evidence is a JSON pointer into the spec), ❓ uncertain (for example an unresolved `$ref`, a possible deployment prefix, or a `default` response). The report also lists required parameters missing from the docs and spec operations never mentioned.
-
-Run it locally:
+- **Source of truth**: the `api-spec-path` input, an auto-detected `openapi.json` / `openapi.yaml` (repo root, `docs/`, `api/`), or, when there is no spec, the API code itself via `api-code-path`. Code is read statically (never run) for FastAPI, Flask, Django and Express. Anything that cannot be resolved statically (computed paths, unknown methods, unfollowed includes) is reported as uncertain, never guessed.
+- **Docs**: Markdown, reStructuredText (`.rst`, including the `http` domain) and AsciiDoc (`.adoc`). Line numbers always point into the original file. Endpoints are recognized as `GET /users/{id}` in headings, tables, bullets or prose, with the parameter tables and status codes that follow.
+- **Checks**: path and method exist; parameters exist with the same location, type and required flag (including request-body fields); response codes are defined.
+- **Examples**: `curl`, `requests`/`httpx`, `fetch`/`axios` and raw HTTP examples are checked for path, method, query parameters and body fields. JSON sample responses are compared with the response schema (wrong types, unknown keys, missing required keys). Calls to other hosts are ignored.
+- **Verdicts**: ✅ verified, ❌ contradicted (with evidence, a JSON pointer into the spec or a `file:line` in the code), ❓ uncertain. Each contradiction carries a suggested fix; add `--ai` to the comment to also get an AI-drafted rewrite, clearly labeled as AI-generated.
+- **Health score**: 0-100 per file and overall, optionally tracked over time with a trend line (`--history`).
 
 ```bash
 python src/api_contract.py --spec openapi.json docs README.md
+python src/api_contract.py --code . docs            # read FastAPI/Flask/Django/Express code
 python src/api_contract.py --app myproject.main:app docs   # imports and runs your FastAPI app
 ```
 
 The exit code is `1` when something is contradicted, so it can also gate CI.
+
+## Documentation Audit
+
+`[verify-docs]` (or `python src/docaudit.py`) adds checks of what the docs say about the project itself, and merges everything into one report:
+
+| Check | Docs claim | Compared with |
+|---|---|---|
+| Environment variables | ``export FOO=...``, "set `FOO`" | `os.environ`, `os.getenv`, `process.env`, `.env.example` |
+| CLI flags | `--dry-run` | argparse, click, typer, commander |
+| References | `src/app.py`, links, `build_order()` | files and function names in the repo |
+| Versions | "Python 3.9+", "Node 18+" | `requires-python`, `engines.node` |
+
+A name that cannot be found is called contradicted only with real evidence (the code reads other variables, a near-identical spelling exists). Otherwise it is uncertain, because it may come from a dependency.
+
+```bash
+python src/docaudit.py docs README.md --code . --history .docaudit/history.json --fail-under 80
+```
+
+## Web Dashboard and Demo
+
+```bash
+python web/server.py     # then open http://127.0.0.1:8765
+```
+
+Paste a spec and docs (or select **Load the demo**) to see the documentation marked up line by line, with evidence and suggested fixes. It runs only on your machine (localhost), and nothing you paste is executed or uploaded.
+
+`examples/shop-demo/` is a small FastAPI project whose docs contain 16 deliberately planted mistakes; `EXPECTED_OUTPUT.md` is the report the checker produces for it, and a test keeps it current.
+
+## Accuracy
+
+`evaluation/` holds 17 hand-labeled cases (a project, its docs, and the verdict each claim must get). `python -m evaluation.run_eval` prints precision and recall per verdict, and `tests/test_eval.py` fails CI if they drop. The cases were written by the same team as the checker, so this is a regression gate, not an independent benchmark.
+
+```mermaid
+flowchart LR
+    D[Docs: md / rst / adoc] --> C[Claim and example extraction]
+    S[OpenAPI spec] --> V
+    K[API code: FastAPI, Flask, Django, Express] -->|static analysis| S
+    C --> V[Deterministic verifier]
+    R[Repository: env, flags, files, versions] --> P[Project checks]
+    C --> P
+    V --> H[Verdicts + evidence + fixes]
+    P --> H
+    H --> O[PR comment / CLI / web dashboard / health score]
+    H -.->|optional| L[LLM drafts wording only]
+```
 
 ## Feature Review with [review-feature]
 
@@ -295,3 +343,7 @@ The action builds semantic indexes stored in `.doc-index/`:
 - **Folder Indexes** — AI-generated summaries of each documentation folder, including per-file descriptions. The LLM selects relevant files directly from these descriptions without loading the actual file content, reducing API calls and runtime.
 
 Indexes are automatically submitted via a PR to your main branch and shared across all PRs once merged, reducing runtime from ~20 minutes to ~4 minutes on large projects.
+
+---
+
+Built on [Code-to-Docs](https://github.com/redhat-community-ai-tools/code-to-docs) by Red Hat (MIT License).

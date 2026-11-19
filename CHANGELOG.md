@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `[verify-api]`: deterministic API Contract Verifier with verified / contradicted / uncertain verdicts and evidence.
+- Static route extraction for FastAPI, Flask, Django and Express (`api-code-path`), with honest uncertainty flags.
+- Suggested fixes, optional AI-drafted rewrites (`--ai`), and a documentation health score with trend history.
+- `.rst` and `.adoc` documentation support with original line numbers.
+- Code example checks (curl, requests/httpx, fetch/axios, raw HTTP) and JSON sample response checks.
+- Project checks (environment variables, CLI flags, file/function references, version claims) and the combined `[verify-docs]` / `src/docaudit.py` audit.
+- Hand-labeled accuracy evaluation (`evaluation/`) with a precision/recall gate in CI.
+- Local web dashboard (`web/server.py`) and demo project (`examples/shop-demo`).
+
 ## [1.1.2] - 2026-08-26
 
 ### Fixed

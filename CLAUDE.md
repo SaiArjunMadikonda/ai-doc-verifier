@@ -22,7 +22,13 @@ AI-powered GitHub Action that analyzes code changes and generates documentation 
 | `jira_integration.py` | Jira/Confluence/Google Docs integration for `[review-feature]` |
 | `security_utils.py` | Credential sanitization, safe subprocess execution, path validation |
 | `utils.py` | Retry logic, backoff calculations |
-| `api_contract.py` | `[verify-api]` — deterministic API Contract Verifier (OpenAPI spec vs Markdown docs); also a CLI |
+| `api_contract.py` | `[verify-api]` — deterministic API Contract Verifier (spec or code vs docs); also a CLI |
+| `static_routes.py` | Reads routes from FastAPI/Flask/Django/Express code with `ast`/regex (never executes code) |
+| `doc_formats.py` | Converts `.rst` / `.adoc` to Markdown with a line map |
+| `examples_check.py` | Verifies curl/requests/fetch examples and JSON sample responses |
+| `project_checks.py` | Env vars, CLI flags, file/function references, version claims |
+| `docaudit.py` | `[verify-docs]` — runs all deterministic checks, one combined health score |
+| `health.py`, `suggestions.py` | Health score/trend history; optional AI rewrites of contradicted claims |
 
 ## Development
 
@@ -31,10 +37,10 @@ AI-powered GitHub Action that analyzes code changes and generates documentation 
 uv run pytest tests/ -x -q
 
 # Run linter
-uv run ruff check src/ tests/
+uv run ruff check src/ tests/ evaluation/
 
 # Format
-uv run ruff format src/ tests/
+uv run ruff format src/ tests/ evaluation/
 ```
 
 ### Key conventions
