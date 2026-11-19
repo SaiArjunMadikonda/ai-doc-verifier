@@ -15,6 +15,7 @@ from security_utils import (
     setup_git_credentials,
     validate_docs_subfolder,
 )
+from utils import record_output
 
 
 def get_diff():
@@ -241,6 +242,7 @@ def push_and_open_pr(modified_files, commit_info=None):
                 env={**os.environ, "GH_TOKEN": gh_token},
             )
             print("✅ Successfully created PR")
+            record_output("pr-created", "true")
 
     except subprocess.CalledProcessError as e:
         print(f"❌ Git operation failed: {sanitize_output(str(e))}")

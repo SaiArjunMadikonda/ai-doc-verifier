@@ -452,6 +452,14 @@ def verify_call(call: ExampleCall, file: str, spec: Spec) -> list[Finding]:
         findings.append(Finding(verdict, claim, "example", message, evidence, fix))
 
     norm, how = spec.find_path(call.path)
+    if norm is None and spec.unresolved_routes:
+        add(
+            UNCERTAIN,
+            f"{label} targets a path that is not among the routes that could be read; "
+            f"{len(spec.unresolved_routes)} route(s) in the code could not be resolved statically.",
+            f"{spec.source} (static analysis)",
+        )
+        return findings
     if norm is None:
         hint = spec.suggest(call.path)
         add(

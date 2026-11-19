@@ -51,3 +51,20 @@ def retry_with_backoff(
 def calc_backoff_delay(attempt, multiplier=3):
     """Calculate linear backoff delay: (attempt + 1) * multiplier seconds."""
     return (attempt + 1) * multiplier
+
+
+def record_output(key: str, value: str) -> None:
+    """Record ``key=value`` for the entrypoint to turn into a GitHub Actions output.
+
+    No-op unless ``CTD_OUTPUT_FILE`` is set (the Docker entrypoint sets it).
+    """
+    import os
+
+    path = os.environ.get("CTD_OUTPUT_FILE")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{key}={value}\n")
+    except OSError:
+        pass

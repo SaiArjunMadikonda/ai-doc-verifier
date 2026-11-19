@@ -70,6 +70,14 @@ class AuditResult:
         }
 
 
+def _under(root: Path, path: str | os.PathLike | None) -> str | None:
+    """Resolve a configured path against the code repository, not the current directory."""
+    if not path:
+        return None
+    p = Path(path)
+    return str(p if p.is_absolute() else root / p)
+
+
 def audit(
     root: str | os.PathLike = ".",
     doc_paths: list[str | os.PathLike] | None = None,
@@ -78,19 +86,31 @@ def audit(
     app: str | None = None,
     run_api: bool = True,
     run_project: bool = True,
+    require_api: bool = False,
+    docs_root: str | os.PathLike | None = None,
 ) -> AuditResult:
-    """Run the selected checks and return the combined result."""
+    """Run the selected checks and return the combined result.
+
+    With *require_api* (set when the caller explicitly named a spec, code folder or app) a
+    missing or unreadable API definition raises ``SpecError`` instead of being skipped, so a
+    typo in a path cannot turn into a passing run.
+
+    *root* is the code repository. If the docs are in another repository, give its folder as
+    *docs_root* and the doc paths inside it.
+    """
     root_p = Path(root).resolve()
     docs = list(doc_paths) if doc_paths else [root_p]
     result = AuditResult()
     if run_api:
         try:
-            spec = resolve_spec(spec_path, code_path, app, root_p)
-            result.api = verify_docs(spec, docs, root_p)
+            spec = resolve_spec(_under(root_p, spec_path), _under(root_p, code_path), app, root_p)
+            result.api = verify_docs(spec, docs, Path(docs_root).resolve() if docs_root else root_p)
         except SpecError as e:
+            if require_api:
+                raise
             result.notes.append(f"API checks skipped: {e}")
     if run_project:
-        result.project = verify_project(root_p, docs)
+        result.project = verify_project(root_p, docs, docs_root=docs_root)
     return result
 
 
@@ -125,24 +145,43 @@ def render_audit_markdown(
 
 def run_from_env(post: bool = True) -> AuditResult | None:
     """Entry point for the ``[verify-docs]`` command."""
+    code_root = Path.cwd()  # the checked-out code repository, before any change of directory
     docs_sub = os.environ.get("DOCS_SUBFOLDER", "").strip()
+    docs_root: Path | None = None
     if docs_sub:
-        doc_roots: list[str] = [docs_sub]
-        if Path("README.md").is_file():
-            doc_roots.append("README.md")
+        doc_roots: list[str] = [str(code_root / docs_sub)]
+        if (code_root / "README.md").is_file():
+            doc_roots.append(str(code_root / "README.md"))
     else:
         from github_ops import setup_docs_environment
 
         if not setup_docs_environment():
             print("Failed to set up docs environment")
             return None
-        doc_roots = ["."]
-    result = audit(
-        ".",
-        doc_roots,
-        spec_path=os.environ.get("API_SPEC_PATH", "").strip() or None,
-        code_path=os.environ.get("API_CODE_PATH", "").strip() or None,
-    )
+        # setup_docs_environment cloned the docs repository and moved into it; the code
+        # repository stays the root for specs, code and project facts.
+        docs_root = Path.cwd()
+        os.chdir(code_root)
+        doc_roots = [str(docs_root)]
+    spec_env = os.environ.get("API_SPEC_PATH", "").strip() or None
+    code_env = os.environ.get("API_CODE_PATH", "").strip() or None
+    try:
+        result = audit(
+            code_root,
+            doc_roots,
+            spec_path=spec_env,
+            code_path=code_env,
+            require_api=bool(spec_env or code_env),
+            docs_root=docs_root,
+        )
+    except SpecError as e:
+        message = (
+            f"## 📚 Documentation audit\n\n❌ Could not read the API definition you configured: {e}"
+        )
+        print(message)
+        if post:
+            post_pr_comment(message)
+        return None
     markdown = render_audit_markdown(result)
     print(markdown)
     if post:
@@ -166,15 +205,20 @@ def main(argv: list[str] | None = None) -> int:
         "--fail-under", type=float, metavar="SCORE", help="Exit 1 when health is below SCORE"
     )
     args = parser.parse_args(argv)
-    result = audit(
-        args.root,
-        args.docs,
-        spec_path=args.spec,
-        code_path=args.code,
-        app=args.app,
-        run_api=not args.no_api,
-        run_project=not args.no_project,
-    )
+    try:
+        result = audit(
+            args.root,
+            args.docs,
+            spec_path=args.spec,
+            code_path=args.code,
+            app=args.app,
+            run_api=not args.no_api,
+            run_project=not args.no_project,
+            require_api=bool(args.spec or args.code or args.app) and not args.no_api,
+        )
+    except SpecError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
     history = append_history(args.history, result.health) if args.history else None
     print(
         json.dumps(result.to_dict(), indent=2)
@@ -182,6 +226,10 @@ def main(argv: list[str] | None = None) -> int:
         else render_audit_markdown(result, history)
     )
     score = result.health.score
+    if score is None:
+        print("Nothing was checked: no verifiable claims were found in the docs.", file=sys.stderr)
+        if args.fail_under is not None:
+            return 1  # an empty run must not pass a quality gate
     if args.fail_under is not None and score is not None and score < args.fail_under:
         print(f"Health {score:g} is below {args.fail_under:g}", file=sys.stderr)
         return 1

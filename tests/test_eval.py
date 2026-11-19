@@ -13,7 +13,7 @@ def test_checkers_meet_accuracy_thresholds():
     totals = ev.totals
     assert totals[C].precision >= 0.95 and totals[C].recall >= 0.95
     assert totals["uncertain"].precision >= 0.9
-    assert totals[V].recall >= 0.95
+    assert totals[V].recall >= 0.95 and totals[V].precision == 1.0
 
 
 def test_case_names_are_unique_and_labeled():
@@ -45,3 +45,15 @@ def test_render_and_cli(capsys):
     assert main([]) == 0
     assert "Every finding matches the labels." in capsys.readouterr().out
     assert main(["--json"]) == 0
+
+
+def test_harness_flags_false_confirmations():
+    case = Case(
+        "t",
+        spec=SHOP_SPEC,
+        docs={"a.md": "### GET /users\n\nx\n"},
+        expected=[("endpoint", "`GET /users` exists", V)],
+        never_verified=[("endpoint", "`GET /users`")],  # but the checker rightly verifies it
+    )
+    result = run_case(case)
+    assert result.tallies[V].fp == 1 and any("false confirmation" in p for p in result.problems)

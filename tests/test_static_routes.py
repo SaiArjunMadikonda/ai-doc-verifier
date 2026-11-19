@@ -475,3 +475,89 @@ def test_nested_routers_across_three_files(tmp_path):
         },
     )
     assert ("GET", "/api/v1/items") in spec_of(tmp_path).operations
+
+
+# ----------------------------------------------------------------- path constants / unresolved
+
+
+def test_path_constants_prefixes_and_imports_are_resolved(tmp_path):
+    root = write(
+        tmp_path,
+        {
+            "app/__init__.py": "",
+            "app/paths.py": 'API = "/api"\nUSERS = "/users"\n',
+            "app/main.py": """\
+                from fastapi import APIRouter, FastAPI
+                from . import paths
+                from .paths import USERS
+
+                BASE = "/v1"
+                app = FastAPI()
+                router = APIRouter(prefix=paths.API)
+
+                @app.get(USERS)
+                def a(): ...
+
+                @router.get(BASE + "/items")
+                def b(): ...
+
+                @app.get(paths.API + "/health")
+                def c(): ...
+
+                app.include_router(router)
+                """,
+        },
+    )
+    spec = ac.load_spec_from_code(root)
+    assert {p for p in spec.data["paths"]} == {"/users", "/api/v1/items", "/api/health"}
+    assert spec.unresolved_routes == []
+
+
+def test_unresolvable_route_paths_make_missing_claims_uncertain(tmp_path):
+    root = write(
+        tmp_path,
+        {
+            "main.py": """\
+                import os
+                from fastapi import FastAPI
+
+                app = FastAPI()
+                PREFIX = os.environ["PREFIX"]
+
+                @app.get(PREFIX + "/dynamic")
+                def a(): ...
+
+                @app.get("/health")
+                def b(): ...
+                """
+        },
+    )
+    spec = ac.load_spec_from_code(root)
+    assert spec.unresolved_routes == ["main.py:8"]
+    docs = "### GET /health\n\nok\n\n### GET /dynamic\n\nmaybe\n\n### GET /nowhere\n\nmaybe\n"
+    report = ac.verify(ac.extract_claims(docs, "d.md"), spec)
+    got = {(f.claim.raw_path, f.verdict) for f in report.findings if f.check == "endpoint"}
+    assert got == {("/health", VERIFIED), ("/dynamic", UNCERTAIN), ("/nowhere", UNCERTAIN)}
+    assert "cannot be determined statically" in report.findings[-1].message
+
+
+def test_unresolvable_router_prefix_is_flagged(tmp_path):
+    root = write(
+        tmp_path,
+        {
+            "main.py": """\
+                from fastapi import APIRouter, FastAPI
+                from somewhere import PREFIX
+
+                app = FastAPI()
+                router = APIRouter(prefix=PREFIX)
+
+                @router.get("/x")
+                def a(): ...
+
+                app.include_router(router)
+                """
+        },
+    )
+    spec = ac.load_spec_from_code(root)
+    assert spec.unresolved_routes == ["main.py:5 (route prefix)"]

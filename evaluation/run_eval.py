@@ -76,6 +76,7 @@ def run_case(case: Case) -> CaseResult:
             root,
             [root / "docs"],
             spec_path=spec_path,
+            code_path=str(root) if case.spec is None and case.code and case.run == "api" else None,
             run_api=case.run == "api",
             run_project=case.run == "project",
         )
@@ -100,6 +101,11 @@ def run_case(case: Case) -> CaseResult:
             )
         else:
             result.problems.append(f"missed {verdict} [{check}] '{needle}'")
+    for check, needle in case.never_verified:
+        for c, m, v in actual:
+            if v == VERIFIED and c == check and needle.lower() in m.lower():
+                result.tallies[VERIFIED].fp += 1
+                result.problems.append(f"false confirmation [{check}] '{needle}': {m}")
     for i, (check, message, verdict) in enumerate(actual):
         if i in used or verdict == VERIFIED:
             continue  # unlabeled verified findings are not judged

@@ -69,19 +69,28 @@ if [ -n "$GOOGLE_SA_KEY" ]; then
   echo "Google Workspace CLI credentials configured"
 fi
 
+# [verify-api] and [verify-docs] are deterministic: they never call a model, so they do not
+# need model settings (and a docs repo is only needed when docs-subfolder is not set).
+VERIFY_ONLY=false
+case "$(printf '%s' "$COMMENT_BODY" | tr '[:upper:]' '[:lower:]')" in
+  *"[verify-docs]"*|*"[verify-api]"*) VERIFY_ONLY=true ;;
+esac
+
 # Validate required inputs
-if [ -z "$MODEL_API_BASE" ]; then
-  echo "❌ Error: model-api-base input is required"
-  exit 1
+if [ "$VERIFY_ONLY" != "true" ]; then
+  if [ -z "$MODEL_API_BASE" ]; then
+    echo "❌ Error: model-api-base input is required"
+    exit 1
+  fi
+
+  if [ -z "$MODEL_NAME" ]; then
+    echo "❌ Error: model-name input is required"
+    exit 1
+  fi
 fi
 
-if [ -z "$MODEL_NAME" ]; then
-  echo "❌ Error: model-name input is required"
-  exit 1
-fi
-
-if [ -z "$DOCS_REPO_URL" ]; then
-  echo "❌ Error: docs-repo-url input is required"  
+if [ -z "$DOCS_REPO_URL" ] && [ -z "$DOCS_SUBFOLDER" ]; then
+  echo "❌ Error: docs-repo-url input is required (or set docs-subfolder)"
   exit 1
 fi
 
@@ -112,17 +121,28 @@ cleanup() {
   if [ -n "$GWS_CREDS_FILE" ] && [ -f "$GWS_CREDS_FILE" ]; then
     rm -f "$GWS_CREDS_FILE"
   fi
+  if [ -n "$CTD_OUTPUT_FILE" ] && [ -f "$CTD_OUTPUT_FILE" ]; then
+    rm -f "$CTD_OUTPUT_FILE"
+  fi
 }
 trap cleanup EXIT
+
+# The Python code records facts such as "a PR was created" here, so outputs reflect what happened
+export CTD_OUTPUT_FILE="$(mktemp /tmp/ctd-output-XXXXXX)"
+: > "$CTD_OUTPUT_FILE"
 
 # Run the documentation enhancer
 if python /app/src/suggest_docs.py $ARGS; then
   echo "✅ Documentation enhancer completed successfully"
 
-  # Set GitHub Actions outputs (if result data is available)
+  # Set GitHub Actions outputs
   if [ -n "$GITHUB_OUTPUT" ]; then
     echo "status=success" >> "$GITHUB_OUTPUT"
-    echo "pr-created=true" >> "$GITHUB_OUTPUT"
+    if grep -qx 'pr-created=true' "$CTD_OUTPUT_FILE"; then
+      echo "pr-created=true" >> "$GITHUB_OUTPUT"
+    else
+      echo "pr-created=false" >> "$GITHUB_OUTPUT"
+    fi
   fi
 
   exit 0

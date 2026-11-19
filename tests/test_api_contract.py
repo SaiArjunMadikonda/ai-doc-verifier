@@ -445,3 +445,25 @@ def test_run_from_env_posts_comment(tmp_path, monkeypatch):
 def test_post_pr_comment_needs_pr_and_token(monkeypatch):
     monkeypatch.delenv("PR_NUMBER", raising=False)
     assert ac.post_pr_comment("x") is False
+
+
+def test_parameter_type_behind_unresolved_ref_is_uncertain_not_verified():
+    data = {
+        "openapi": "3.0.0",
+        "info": {},
+        "paths": {
+            "/items": {
+                "get": {
+                    "parameters": [
+                        {"name": "q", "in": "query", "schema": {"$ref": "other.yaml#/Q"}},
+                        {"name": "n", "in": "query", "schema": {"type": "integer"}},
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    md = "### GET /items\n\n| Name | Type |\n|---|---|\n| q | integer |\n| n | integer |\n"
+    report = verify(extract_claims(md, "d.md"), Spec(data))
+    got = {f.message.split("`")[1]: f.verdict for f in report.findings if f.check == "parameter"}
+    assert got == {"q": UNCERTAIN, "n": VERIFIED}

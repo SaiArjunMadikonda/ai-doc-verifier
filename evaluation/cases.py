@@ -12,7 +12,9 @@ Labeling rules (see ``run_eval.py`` for how they are scored):
 * Every ``contradicted`` and ``uncertain`` finding the checker produces must be listed
   here.  An unlisted one counts as a false alarm (hurts precision).
 * ``verified`` items are spot checks: listed ones must be found, unlisted ones are
-  ignored.
+  ignored, *except* those named in ``never_verified``: a finding that matches one of those
+  and comes back verified is a false confirmation and counts as an error.
+* A case with ``code`` and no ``spec`` is checked against the routes read from that code.
 """
 
 from __future__ import annotations
@@ -29,6 +31,8 @@ class Case:
     expected: list[tuple[str, str, str]]
     spec: dict | None = None
     code: dict[str, str] = field(default_factory=dict)
+    # (check, needle) pairs that must NOT come back verified: guards against false confirmations
+    never_verified: list[tuple[str, str]] = field(default_factory=list)
     run: str = "api"  # api | project
 
 
@@ -320,4 +324,57 @@ PROJECT_CASES = [
     ),
 ]
 
-ALL_CASES = API_CASES + PROJECT_CASES
+UNRESOLVED_CASES = [
+    Case(
+        "route path declared through a constant",
+        code={
+            "main.py": 'from fastapi import FastAPI\napp = FastAPI()\nUSERS = "/users"\n\n'
+            "@app.get(USERS)\ndef users(): ...\n\n@app.get('/health')\ndef health(): ...\n"
+        },
+        docs={"api.md": "### GET /users\n\nList.\n\n### GET /missing\n\nGone.\n"},
+        expected=[("endpoint", "`GET /users` exists", V), ("endpoint", "`/missing`", C)],
+    ),
+    Case(
+        "route path that cannot be known statically",
+        code={
+            "main.py": "import os\nfrom fastapi import FastAPI\napp = FastAPI()\n"
+            "P = os.environ['P']\n\n@app.get(P + '/x')\ndef x(): ...\n\n"
+            "@app.get('/health')\ndef health(): ...\n"
+        },
+        docs={"api.md": "### GET /health\n\nok\n\n### GET /secret\n\nmaybe\n"},
+        expected=[
+            ("endpoint", "`GET /health` exists", V),
+            ("endpoint", "`/secret` is not among the routes", U),
+        ],
+        never_verified=[("endpoint", "`/secret`")],
+    ),
+    Case(
+        "parameter type behind an unresolved external reference",
+        spec={
+            "openapi": "3.0.0",
+            "info": {"title": "x", "version": "1"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "parameters": [
+                            {"name": "q", "in": "query", "schema": {"$ref": "other.yaml#/Q"}},
+                            {"name": "n", "in": "query", "schema": {"type": "integer"}},
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                }
+            },
+        },
+        docs={
+            "api.md": "### GET /items\n\n| Name | Type |\n|---|---|\n"
+            "| q | integer |\n| n | integer |\n"
+        },
+        expected=[
+            ("parameter", "Parameter `q` exists, but its type", U),
+            ("parameter", "Parameter `n`", V),
+        ],
+        never_verified=[("parameter", "Parameter `q`")],
+    ),
+]
+
+ALL_CASES = API_CASES + UNRESOLVED_CASES + PROJECT_CASES

@@ -8,18 +8,21 @@ branding:
 
 inputs:
   model-api-base:
-    description: 'Base URL for an OpenAI-compatible API (e.g. vLLM on OpenShift AI, Gemini, etc.)'
-    required: true
+    description: 'Base URL for an OpenAI-compatible API (e.g. vLLM on OpenShift AI, Gemini, etc.). Required except for [verify-api] and [verify-docs], which never call a model.'
+    required: false
+    default: ''
   model-api-key:
     description: 'API key for the model endpoint (leave empty if not required)'
     required: false
     default: ''
   model-name:
-    description: 'Model name to use for inference (e.g. meta-llama/Llama-3.1-8B-Instruct, gemini-2.0-flash)'
-    required: true
+    description: 'Model name to use for inference (e.g. meta-llama/Llama-3.1-8B-Instruct, gemini-2.0-flash). Required except for [verify-api] and [verify-docs].'
+    required: false
+    default: ''
   docs-repo-url:
-    description: 'URL of the documentation repository'
-    required: true
+    description: 'URL of the documentation repository. Required unless docs-subfolder is set.'
+    required: false
+    default: ''
   github-token:
     description: 'GitHub token for creating PRs'
     required: true

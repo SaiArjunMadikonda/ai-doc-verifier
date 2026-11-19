@@ -160,6 +160,8 @@ class PyModule:
     tree: ast.Module
     # local name -> (module dotted name or "", original name or "", relative level)
     imports: dict[str, tuple[str, str, int]] = field(default_factory=dict)
+    # module-level ``NAME = <expression>`` assignments, used to resolve path constants
+    assigns: dict[str, ast.expr] = field(default_factory=dict)
 
 
 class PyProject:
@@ -175,6 +177,19 @@ class PyProject:
                 continue
             rel = path.relative_to(root).as_posix()
             mod = PyModule(path, rel, tree)
+            for stmt in tree.body:
+                if (
+                    isinstance(stmt, ast.Assign)
+                    and len(stmt.targets) == 1
+                    and isinstance(stmt.targets[0], ast.Name)
+                ):
+                    mod.assigns[stmt.targets[0].id] = stmt.value
+                elif (
+                    isinstance(stmt, ast.AnnAssign)
+                    and isinstance(stmt.target, ast.Name)
+                    and stmt.value is not None
+                ):
+                    mod.assigns[stmt.target.id] = stmt.value
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
                     for a in node.names:
@@ -205,6 +220,37 @@ class PyProject:
                 rel = posixpath.normpath(rel)
                 if rel in self.modules:
                     return self.modules[rel]
+        return None
+
+    def string_value(self, mod: PyModule, node, _depth: int = 0) -> str | None:
+        """Value of a string expression: a literal, a module constant, ``A + B``, or ``mod.CONST``.
+
+        Returns ``None`` when it cannot be known statically (never guesses).
+        """
+        if node is None or _depth > 6:
+            return None
+        if isinstance(node, ast.Constant):
+            return node.value if isinstance(node.value, str) else None
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left = self.string_value(mod, node.left, _depth + 1)
+            right = self.string_value(mod, node.right, _depth + 1)
+            return left + right if left is not None and right is not None else None
+        if isinstance(node, ast.Name):
+            if node.id in mod.assigns:
+                return self.string_value(mod, mod.assigns[node.id], _depth + 1)
+            if node.id in mod.imports:
+                dotted, original, level = mod.imports[node.id]
+                target = self.find_module(dotted, mod, level)
+                if target and original and original in target.assigns:
+                    return self.string_value(target, target.assigns[original], _depth + 1)
+        elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            alias = node.value.id
+            if alias in mod.imports:
+                dotted, original, level = mod.imports[alias]
+                full = f"{dotted}.{original}".strip(".") if original else dotted
+                target = self.find_module(full, mod, level)
+                if target and node.attr in target.assigns:
+                    return self.string_value(target, target.assigns[node.attr], _depth + 1)
         return None
 
     def resolve(self, mod: PyModule, node, defined) -> tuple[PyModule, str] | None:
@@ -391,10 +437,9 @@ def _decorator_route(dec) -> tuple[str, str, ast.Call, list[str]] | None:
     return _name_of(recv), attr, dec, [m.upper() for m in methods]
 
 
-def _route_path(call: ast.Call) -> str | None:
+def _route_path(call: ast.Call, project: PyProject, mod: PyModule) -> str | None:
     node = call.args[0] if call.args else (_kw(call, "path") or _kw(call, "rule"))
-    value = _const(node)
-    return value if isinstance(value, str) else None
+    return project.string_value(mod, node)
 
 
 def _status_codes_raised(func: ast.AST) -> list[str]:
@@ -510,7 +555,9 @@ def _field_required(call: ast.Call) -> bool:
     return True
 
 
-def _python_routes(project: PyProject, models: Models, framework: str) -> list[RouteDef]:
+def _python_routes(
+    project: PyProject, models: Models, framework: str, skipped: list[str]
+) -> list[RouteDef]:
     """Routes for ``fastapi`` or ``flask`` (they share the decorator/router structure)."""
     ctor = {"fastapi": ("FastAPI", "APIRouter"), "flask": ("Flask", "Blueprint")}[framework]
     prefix_kw = "prefix" if framework == "fastapi" else "url_prefix"
@@ -528,8 +575,12 @@ def _python_routes(project: PyProject, models: Models, framework: str) -> list[R
                 continue
             if isinstance(value, ast.Call) and _name_of(value.func) in ctor:
                 if isinstance(target, ast.Name):
-                    own = _const(_kw(value, prefix_kw)) or ""
-                    containers[(mod.rel, target.id)] = own if isinstance(own, str) else ""
+                    prefix_node = _kw(value, prefix_kw)
+                    own = project.string_value(mod, prefix_node) if prefix_node else ""
+                    if own is None:
+                        skipped.append(f"{mod.rel}:{value.lineno} (route prefix)")
+                        own = ""
+                    containers[(mod.rel, target.id)] = own
 
     def defined(m: PyModule, n: str) -> bool:
         return (m.rel, n) in containers
@@ -545,9 +596,13 @@ def _python_routes(project: PyProject, models: Models, framework: str) -> list[R
             parent = project.resolve(mod, node.func.value, defined)
             child = project.resolve(mod, node.args[0], defined)
             if parent and child:
-                extra = _const(_kw(node, prefix_kw)) or ""
+                prefix_node = _kw(node, prefix_kw)
+                extra = project.string_value(mod, prefix_node) if prefix_node else ""
+                if extra is None:
+                    skipped.append(f"{mod.rel}:{node.lineno} (route prefix)")
+                    extra = ""
                 parents.setdefault((child[0].rel, child[1]), []).append(
-                    ((parent[0].rel, parent[1]), extra if isinstance(extra, str) else "")
+                    ((parent[0].rel, parent[1]), extra)
                 )
 
     def prefixes(key: tuple[str, str], _seen: frozenset = frozenset()) -> list[str]:
@@ -576,8 +631,9 @@ def _python_routes(project: PyProject, models: Models, framework: str) -> list[R
                 key = project.resolve(mod, recv_node, defined)
                 if key is None:
                     continue
-                path = _route_path(call)
+                path = _route_path(call, project, mod)
                 if path is None:
+                    skipped.append(f"{mod.rel}:{func.lineno}")
                     continue
                 verbs = methods or (["GET"] if attr in ("route", "api_route") else [attr.upper()])
                 for prefix in prefixes((key[0].rel, key[1])):
@@ -934,7 +990,12 @@ def _openapi_path(path: str) -> str:
     return re.sub(r"(?<=/):([A-Za-z_]\w*)", r"{\1}", path)
 
 
-def routes_to_openapi(routes: list[RouteDef], unknown_methods: list[str], title: str) -> dict:
+def routes_to_openapi(
+    routes: list[RouteDef],
+    unknown_methods: list[str],
+    title: str,
+    unresolved_routes: list[str] | None = None,
+) -> dict:
     paths: dict[str, dict] = {}
     for r in routes:
         r.path = _openapi_path(r.path)
@@ -987,6 +1048,7 @@ def routes_to_openapi(routes: list[RouteDef], unknown_methods: list[str], title:
         "info": {"title": title, "version": "static"},
         "paths": paths,
         "x-unknown-methods": unknown_methods,
+        "x-unresolved-routes": sorted(set(unresolved_routes or [])),
         "x-generated-from-code": True,
     }
 
@@ -1024,6 +1086,7 @@ def extract_routes(root: str | os.PathLike, frameworks: list[str] | None = None)
         )
     routes: list[RouteDef] = []
     unknown: list[str] = []
+    skipped: list[str] = []
     project = None
     models = None
     if any(f in ("fastapi", "flask", "django") for f in frameworks):
@@ -1031,7 +1094,7 @@ def extract_routes(root: str | os.PathLike, frameworks: list[str] | None = None)
         models = Models(project)
     for framework in frameworks:
         if framework in ("fastapi", "flask"):
-            routes += _python_routes(project, models, framework)
+            routes += _python_routes(project, models, framework, skipped)
         elif framework == "django":
             r, u = _django_routes(project)
             routes += r
@@ -1040,4 +1103,6 @@ def extract_routes(root: str | os.PathLike, frameworks: list[str] | None = None)
             routes += _express_routes(root)
     if not routes and not unknown:
         raise StaticRouteError(f"Found {', '.join(frameworks)} but could not read any routes.")
-    return routes_to_openapi(routes, unknown, title=f"{root.name} ({', '.join(frameworks)})")
+    return routes_to_openapi(
+        routes, unknown, title=f"{root.name} ({', '.join(frameworks)})", unresolved_routes=skipped
+    )

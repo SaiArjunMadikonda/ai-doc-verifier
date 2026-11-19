@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hand-labeled accuracy evaluation (`evaluation/`) with a precision/recall gate in CI.
 - Local web dashboard (`web/server.py`) and demo project (`examples/shop-demo`).
 
+### Fixed
+- Routes declared through string constants or `A + B` path expressions are now read; routes whose path or prefix cannot be determined statically make unmatched claims *uncertain* instead of *contradicted*.
+- A parameter type behind an unresolved external `$ref` is reported *uncertain*, never *verified*.
+- `docaudit.py`: a named `--spec` / `--code` that cannot be read exits `2`; a run that checked nothing fails `--fail-under`.
+- Action: `[verify-api]` / `[verify-docs]` no longer require model settings or a docs repository URL; with docs in a separate repository, `[verify-docs]` checks them against the code repository; `pr-created` is only `true` when a PR was created.
+- Dashboard: undocumented operations are listed even when the docs contain no endpoint claims.
+- Evaluation: `never_verified` labels catch false confirmations; three cases for the above were added.
+
 ## [1.1.2] - 2026-08-26
 
 ### Fixed

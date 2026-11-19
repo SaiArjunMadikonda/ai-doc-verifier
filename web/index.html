@@ -224,7 +224,10 @@
       const empty = el("div", "empty");
       empty.appendChild(el("h2", "", "No endpoint claims found"));
       empty.appendChild(el("p", "", "The checker looks for endpoints written like GET /users/{id} in headings, tables, lists or sentences. Add one and check again."));
+      const total = (state.undocumented_operations || []).length;
+      if (total) empty.appendChild(el("p", "", `Your spec defines ${total} operation(s), listed below. Each one is a good place to start documenting.`));
       results.appendChild(empty);
+      renderGaps();
       return;
     }
 
@@ -281,21 +284,25 @@
     });
     results.appendChild(doc);
 
-    const gaps = [...(state.missing_required_params || []), ...(state.undocumented_operations || [])];
-    if (gaps.length) {
-      const box = el("div", "gaps");
-      box.appendChild(el("h3", "", "Gaps in the documentation"));
-      if (state.missing_required_params.length) {
-        box.appendChild(el("p", "note", "Required parameters the docs never mention"));
-        const ul = el("ul"); state.missing_required_params.forEach((t) => { const li = el("li"); rich(li, t); ul.appendChild(li); }); box.appendChild(ul);
-      }
-      if (state.undocumented_operations.length) {
-        box.appendChild(el("p", "note", "Operations in the spec that no doc page describes"));
-        const ul = el("ul"); state.undocumented_operations.forEach((t) => { const li = el("li"); rich(li, t); ul.appendChild(li); }); box.appendChild(ul);
-      }
-      results.appendChild(box);
-    }
+    renderGaps();
     applyFilter();
+  }
+
+  function renderGaps() {
+    const missing = state.missing_required_params || [];
+    const undocumented = state.undocumented_operations || [];
+    if (!missing.length && !undocumented.length) return;
+    const box = el("div", "gaps");
+    box.appendChild(el("h3", "", "Gaps in the documentation"));
+    const list = (intro, items) => {
+      box.appendChild(el("p", "note", intro));
+      const ul = el("ul");
+      items.forEach((t) => { const li = el("li"); rich(li, t); ul.appendChild(li); });
+      box.appendChild(ul);
+    };
+    if (missing.length) list("Required parameters the docs never mention", missing);
+    if (undocumented.length) list("Operations in the spec that no doc page describes", undocumented);
+    results.appendChild(box);
   }
 
   function applyFilter() {

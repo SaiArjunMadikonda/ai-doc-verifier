@@ -161,6 +161,8 @@ class RepoIndex:
     imported: set[str] = field(default_factory=set)
     modules: set[str] = field(default_factory=set)
     python_files: int = 0
+    # files of a separate docs repository (relative to it), for resolving links between docs
+    doc_files: set[str] = field(default_factory=set)
     requires_python: tuple[str, Location] | None = None
     engines_node: tuple[str, Location] | None = None
 
@@ -179,11 +181,16 @@ def _skip_dir(name: str) -> bool:
     return name in _SKIP_DIRS or name.startswith(".git") and name != ".github"
 
 
-def index_repo(root: str | os.PathLike) -> RepoIndex:
+def index_repo(
+    root: str | os.PathLike, exclude: list[str | os.PathLike] | None = None
+) -> RepoIndex:
     root_p = Path(root).resolve()
     idx = RepoIndex(root_p)
+    skipped = {Path(e).resolve() for e in exclude or []}
     for dirpath, dirs, names in os.walk(root_p):
-        dirs[:] = sorted(d for d in dirs if not _skip_dir(d))
+        dirs[:] = sorted(
+            d for d in dirs if not _skip_dir(d) and (Path(dirpath) / d).resolve() not in skipped
+        )
         for name in sorted(names):
             path = Path(dirpath) / name
             rel = path.relative_to(root_p).as_posix()
@@ -568,6 +575,14 @@ _SYMBOL = re.compile(r"^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\([^`]*\)$")
 
 def _resolve_path(rel: str, doc_dir: str, idx: RepoIndex) -> str | None:
     rel = rel.lstrip("./") if rel.startswith("./") else rel
+    if idx.doc_files:  # docs live in their own repository: links resolve inside it first
+        base = Path(doc_dir) if doc_dir else Path(".")
+        for cand in ((base / rel).as_posix(), rel.lstrip("/")):
+            norm = os.path.normpath(cand).replace("\\", "/")
+            if norm in idx.doc_files or any(
+                f.startswith(norm.rstrip("/") + "/") for f in idx.doc_files
+            ):
+                return norm
     candidates = []
     if rel.startswith("/"):
         candidates.append(rel.lstrip("/"))
@@ -811,10 +826,24 @@ def verify_project(
     root: str | os.PathLike,
     doc_paths: list[str | os.PathLike] | None = None,
     checks: tuple[str, ...] = CHECK_NAMES,
+    docs_root: str | os.PathLike | None = None,
 ) -> ProjectReport:
-    """Run the project checks over the docs under *doc_paths* (default: the whole repo)."""
+    """Run the project checks over the docs under *doc_paths* (default: the whole repo).
+
+    *root* is the code repository. When the docs live in a different repository, pass its
+    folder as *docs_root*: doc paths are then reported relative to it, links between docs
+    resolve inside it, and it is not mistaken for part of the code.
+    """
     root_p = Path(root).resolve()
-    idx = index_repo(root_p)
+    docs_root_p = Path(docs_root).resolve() if docs_root else None
+    idx = index_repo(root_p, exclude=[docs_root_p] if docs_root_p else None)
+    if docs_root_p:
+        for dirpath, dirs, names in os.walk(docs_root_p):
+            dirs[:] = [d for d in dirs if not _skip_dir(d)]
+            idx.doc_files.update(
+                (Path(dirpath) / n).relative_to(docs_root_p).as_posix() for n in names
+            )
+    rel_base = docs_root_p or root_p
     report = ProjectReport(root=str(root_p))
     runners = {
         "env": check_env,
@@ -828,7 +857,7 @@ def verify_project(
         except (OSError, UnicodeDecodeError):
             continue
         try:
-            rel = f.resolve().relative_to(root_p).as_posix()
+            rel = f.resolve().relative_to(rel_base).as_posix()
         except ValueError:
             rel = str(f)
         markdown, linemap = to_markdown(text, kind_of(f))

@@ -74,6 +74,8 @@ class SpecParam:
     required: bool
     types: frozenset[str] = frozenset()  # empty = unknown
     pointer: str = ""
+    # True when the type could not be read (external or broken $ref), so it must not be "verified"
+    types_unresolved: bool = False
 
 
 @dataclass
@@ -127,6 +129,10 @@ class Spec:
         self.unknown_method_paths = {
             normalize_path(p) for p in data.get("x-unknown-methods") or [] if isinstance(p, str)
         }
+        # routes found in code whose path could not be worked out (e.g. built at runtime)
+        self.unresolved_routes = [
+            r for r in data.get("x-unresolved-routes") or [] if isinstance(r, str)
+        ]
         self._build()
 
     # -- construction ------------------------------------------------------
@@ -190,8 +196,8 @@ class Spec:
         required: set[str] = set(schema.get("required") or [])
         resolved = True
         for name, sub in (schema.get("properties") or {}).items():
-            types, _ = self._schema_types(sub)
-            props[name] = (types,)
+            types, types_ok = self._schema_types(sub)
+            props[name] = (types, types_ok)
         for sub in schema.get("allOf") or []:
             p, r, ok2 = self._body_properties(sub, depth + 1)
             props.update(p)
@@ -242,6 +248,7 @@ class Spec:
                             required=bool(pr.get("required", loc == "path")),
                             types=types if tok else frozenset(),
                             pointer=ptr,
+                            types_unresolved=not tok,
                         )
                     )
                 self._add_body_params(op, operation, pointer)
@@ -292,9 +299,16 @@ class Spec:
         props, required, resolved = self._body_properties(schema)
         if not resolved:
             operation.unresolved = True
-        for name, (types,) in props.items():
+        for name, (types, types_ok) in props.items():
             operation.params.append(
-                SpecParam(name, "body", name in required, types, f"{pointer}/properties/{name}")
+                SpecParam(
+                    name,
+                    "body",
+                    name in required,
+                    types,
+                    f"{pointer}/properties/{name}",
+                    types_unresolved=not types_ok,
+                )
             )
 
     # -- lookup ------------------------------------------------------------
@@ -912,6 +926,17 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
         findings.append(Finding(verdict, claim, check, message, evidence, fix))
 
     norm, how = spec.find_path(claim.raw_path)
+    if norm is None and spec.unresolved_routes:
+        add(
+            UNCERTAIN,
+            "endpoint",
+            f"`{claim.raw_path}` is not among the routes that could be read, but "
+            f"{len(spec.unresolved_routes)} route(s) in the code have a path or prefix that "
+            f"cannot be determined statically (for example `{spec.unresolved_routes[0]}`), "
+            "so it may be one of them.",
+            f"{spec.source} (static analysis)",
+        )
+        return findings, None
     if norm is None:
         hint = spec.suggest(claim.raw_path)
         msg = f"The spec does not define the path `{claim.raw_path}`."
@@ -1038,6 +1063,14 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
                 f"Parameter `{dp.name}`: " + "; ".join(problems) + ".",
                 sp.pointer,
                 fix,
+            )
+        elif dp.type and sp.types_unresolved:
+            add(
+                UNCERTAIN,
+                "parameter",
+                f"Parameter `{dp.name}` exists, but its type `{dp.type}` could not be checked "
+                "because the schema is an unresolved (external or broken) `$ref`.",
+                sp.pointer,
             )
         else:
             add(

@@ -167,3 +167,15 @@ class TestSetupDocsEnvironment:
         result = setup_docs_environment()
 
         assert result is False
+
+
+def test_record_output_writes_only_when_enabled(tmp_path, monkeypatch):
+    from utils import record_output
+
+    target = tmp_path / "out"
+    monkeypatch.delenv("CTD_OUTPUT_FILE", raising=False)
+    record_output("pr-created", "true")
+    assert not target.exists()
+    monkeypatch.setenv("CTD_OUTPUT_FILE", str(target))
+    record_output("pr-created", "true")
+    assert target.read_text() == "pr-created=true\n"

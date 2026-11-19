@@ -265,6 +265,8 @@ A name that cannot be found is called contradicted only with real evidence (the 
 python src/docaudit.py docs README.md --code . --history .docaudit/history.json --fail-under 80
 ```
 
+Exit codes: `0` ok, `1` something is contradicted (or the score is under `--fail-under`, or nothing could be checked while `--fail-under` is set), `2` a spec, code folder or app you named could not be read. A check that is skipped is never silently treated as a pass.
+
 ## Web Dashboard and Demo
 
 ```bash
