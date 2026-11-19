@@ -17,8 +17,8 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - run: uv python install 3.12
       - run: uv sync --extra dev
-      - run: uv run ruff check src/ tests/
-      - run: uv run ruff format --check src/ tests/
+      - run: uv run ruff check src/ tests/ evaluation/
+      - run: uv run ruff format --check src/ tests/ evaluation/
 
   test:
     runs-on: ubuntu-latest

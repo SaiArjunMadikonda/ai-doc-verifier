@@ -28,13 +28,14 @@ pythonpath = ["src"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "evaluation"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501", "E402"]
+"evaluation/**" = ["E501", "E402"]
 # E501 suppressed for src: 52 existing violations in prompt strings; ruff format still enforces line length for code
 "src/**" = ["E501", "E402"]
 
