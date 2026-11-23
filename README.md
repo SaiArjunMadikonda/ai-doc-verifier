@@ -233,7 +233,7 @@ Any OpenAI-compatible API works. Common examples:
 
 Comment `[verify-api]` on a PR to compare the documented API with its definition. The check is deterministic: no model is called, and your code is never executed.
 
-- **Source of truth**: the `api-spec-path` input, an auto-detected `openapi.json` / `openapi.yaml` (repo root, `docs/`, `api/`), or, when there is no spec, the API code itself via `api-code-path`. Code is read statically (never run) for FastAPI, Flask, Django and Express. Anything that cannot be resolved statically (computed paths, unknown methods, unfollowed includes) is reported as uncertain, never guessed.
+- **Source of truth**: the `api-spec-path` input, an auto-detected `openapi.json` / `openapi.yaml` (repo root, `docs/`, `api/`), or, when there is no spec, the API code itself via `api-code-path`. Code is read statically (never run) for FastAPI, Flask, Django, Express, Go (gin, chi, echo, gorilla, net/http), Spring (Java/Kotlin), Rails and ASP.NET (controllers and minimal APIs). The Go, Spring, Rails and ASP.NET readers do not read parameter types or bodies, so a documented parameter the reader did not see is uncertain, not wrong. Anything that cannot be resolved statically (computed paths, unknown methods, unfollowed includes) is reported as uncertain, never guessed.
 - **Docs**: Markdown, reStructuredText (`.rst`, including the `http` domain) and AsciiDoc (`.adoc`). Line numbers always point into the original file. Endpoints are recognized as `GET /users/{id}` in headings, tables, bullets or prose, with the parameter tables and status codes that follow.
 - **Checks**: path and method exist; parameters exist with the same location, type and required flag (including request-body fields); response codes are defined.
 - **Examples**: `curl`, `requests`/`httpx`, `fetch`/`axios` and raw HTTP examples are checked for path, method, query parameters and body fields. JSON sample responses are compared with the response schema (wrong types, unknown keys, missing required keys). Calls to other hosts are ignored.
@@ -242,7 +242,7 @@ Comment `[verify-api]` on a PR to compare the documented API with its definition
 
 ```bash
 python src/api_contract.py --spec openapi.json docs README.md
-python src/api_contract.py --code . docs            # read FastAPI/Flask/Django/Express code
+python src/api_contract.py --code . docs            # read FastAPI/Flask/Django/Express/Go/Spring/Rails/ASP.NET code
 python src/api_contract.py --app myproject.main:app docs   # imports and runs your FastAPI app
 ```
 
@@ -258,6 +258,9 @@ The exit code is `1` when something is contradicted, so it can also gate CI.
 | CLI flags | `--dry-run` | argparse, click, typer, commander |
 | References | `src/app.py`, links, `build_order()` | files and function names in the repo |
 | Versions | "Python 3.9+", "Node 18+" | `requires-python`, `engines.node` |
+| Infrastructure | "listens on port 8080", `docker compose up web`, `--set image.tag=1`, `-var region=...` | Dockerfile `EXPOSE`, compose services and ports, Helm `values.yaml` keys, Terraform `variable` blocks |
+| Anchor links | `[setup](setup.md#install)` | the headings of the target page (GitHub-style anchors) |
+| Runbook commands | `make deploy`, `npm run build`, `./scripts/rotate.sh` | Makefile targets, `package.json` scripts, files in the repo |
 
 A name that cannot be found is called contradicted only with real evidence (the code reads other variables, a near-identical spelling exists). Otherwise it is uncertain, because it may come from a dependency.
 
@@ -265,7 +268,49 @@ A name that cannot be found is called contradicted only with real evidence (the 
 python src/docaudit.py docs README.md --code . --history .docaudit/history.json --fail-under 80
 ```
 
+An infrastructure, link or runbook claim is only checked when the file it depends on exists, so a repository without Terraform is never told its docs are wrong about Terraform.
+
 Exit codes: `0` ok, `1` something is contradicted (or the score is under `--fail-under`, or nothing could be checked while `--fail-under` is set), `2` a spec, code folder or app you named could not be read. A check that is skipped is never silently treated as a pass.
+
+### Catch drift in pull requests
+
+```bash
+# only the docs a PR touches, plus docs that mention a code file it changed
+python src/docaudit.py --changed-since origin/main
+
+# adopt the tool on a project with old problems: only NEW contradictions fail
+python src/docaudit.py --update-baseline        # writes .docaudit-baseline.json
+python src/docaudit.py --fail-under 80          # known problems no longer fail the run
+
+# findings in GitHub's Code Scanning tab
+python src/docaudit.py --sarif docaudit.sarif
+```
+
+Findings in the baseline are matched by file, check, subject and message, not by line number, so editing the docs above a known problem does not make it look new. Deliberate exceptions go in `.docaudit.json`: `{"ignore": [{"file": "docs/legacy/*", "check": "reference"}]}`. In the GitHub Action set `DOCAUDIT_BASE_REF` to scope `[verify-docs]` to the changed files; both files are picked up from the repository root automatically.
+
+### Breaking changes and deprecations
+
+```bash
+python src/api_diff.py v1.4.0 HEAD docs --fail-on-breaking     # two git refs
+python src/docaudit.py --code . --compare-to origin/main docs   # inside the audit
+```
+
+The API at the older ref is unpacked with `git archive` into a temporary folder (your working tree is untouched) and compared with the newer one. Removed endpoints (with a "may have been renamed to" hint), newly required parameters, changed types and removed success responses are *breaking*; removed parameters, newly deprecated endpoints and other lost responses are worth a note. Each change lists the documentation lines that describe the affected endpoint. Separately, an endpoint the API marks `deprecated` whose docs never say so is reported as uncertain.
+
+### Meeting notes
+
+```bash
+python src/docaudit.py docs --code . --meeting meetings/api-sync.vtt
+python src/meeting_notes.py meeting.docx --root . docs           # on its own
+```
+
+Documentation mistakes often start in a meeting: "we're renaming `SHOP_DB_URL`", "the `/invoices` endpoint is retired", "the default limit goes from 20 to 50". The checker reads a Microsoft Teams transcript (`.vtt` or `.docx`) or plain `Speaker: text` notes, finds statements like these with fixed rules, and checks each against the code and docs:
+
+- ✅ the code already matches and the docs agree
+- ❌ the code matches the decision but the docs still describe the old thing
+- ❓ the decision is not in the code yet (a *pending* item), or cannot be found
+
+Output includes the speaker and timestamp as evidence, suggested edits, action items about documentation, and draft decision records. The transcript is read locally. With `--ai` a model may also *propose* decisions from loose conversation (speaker names and e-mail addresses are redacted first and a proposal must quote identifiers that really appear in the text), but the verdict always comes from searching the code. The dashboard has a **Meeting notes** tab; with only a spec and docs it can check endpoint decisions and says plainly that it cannot check files, variables or flags. `examples/shop-demo/meetings/api-sync.vtt` is a made-up meeting for the demo project.
 
 ## Web Dashboard and Demo
 
@@ -275,17 +320,17 @@ python web/server.py     # then open http://127.0.0.1:8765
 
 Paste a spec and docs (or select **Load the demo**) to see the documentation marked up line by line, with evidence and suggested fixes. It runs only on your machine (localhost), and nothing you paste is executed or uploaded.
 
-`examples/shop-demo/` is a small FastAPI project whose docs contain 16 deliberately planted mistakes; `EXPECTED_OUTPUT.md` is the report the checker produces for it, and a test keeps it current.
+`examples/shop-demo/` is a small FastAPI project whose docs contain 20 deliberately planted mistakes (API, environment, CLI, files, container, compose, Helm and Terraform); `EXPECTED_OUTPUT.md` is the report the checker produces for it, and a test keeps it current.
 
 ## Accuracy
 
-`evaluation/` holds 17 hand-labeled cases (a project, its docs, and the verdict each claim must get). `python -m evaluation.run_eval` prints precision and recall per verdict, and `tests/test_eval.py` fails CI if they drop. The cases were written by the same team as the checker, so this is a regression gate, not an independent benchmark.
+`evaluation/` holds 24 hand-labeled cases (a project, its docs, and the verdict each claim must get). `python -m evaluation.run_eval` prints precision and recall per verdict, and `tests/test_eval.py` fails CI if they drop. The cases were written by the same team as the checker, so this is a regression gate, not an independent benchmark.
 
 ```mermaid
 flowchart LR
     D[Docs: md / rst / adoc] --> C[Claim and example extraction]
     S[OpenAPI spec] --> V
-    K[API code: FastAPI, Flask, Django, Express] -->|static analysis| S
+    K[API code: Python, JS, Go, Java, Ruby, C#] -->|static analysis| S
     C --> V[Deterministic verifier]
     R[Repository: env, flags, files, versions] --> P[Project checks]
     C --> P

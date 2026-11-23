@@ -377,4 +377,78 @@ UNRESOLVED_CASES = [
     ),
 ]
 
-ALL_CASES = API_CASES + UNRESOLVED_CASES + PROJECT_CASES
+INFRA_FILES = {
+    "Dockerfile": "FROM python:3.12\nEXPOSE 8000\n",
+    "docker-compose.yml": "services:\n  api:\n    build: .\n  db:\n    image: postgres\n",
+    "chart/values.yaml": "image:\n  tag: latest\nreplicas: 2\n",
+    "infra/vars.tf": 'variable "region" {}\n',
+    "Makefile": "test:\n\tpytest\n",
+    "package.json": '{"scripts": {"build": "x"}}',
+    "tools/seed.py": "print(1)\n",
+}
+
+INFRA_CASES = [
+    Case(
+        "container ports, compose services, Helm values and Terraform variables",
+        code=INFRA_FILES,
+        run="project",
+        docs={
+            "ops.md": "The container listens on port 8000, not port 9000.\n"
+            "```bash\ndocker compose up api cache\n"
+            "helm install x ./chart --set image.tag=1 --set image.tagg=2\n"
+            "terraform apply -var region=eu -var zone=a\n```\n"
+        },
+        expected=[
+            ("infra", "Port 8000 is exposed", V),
+            ("infra", "port 9000 but the project exposes", C),
+            ("infra", "Compose service `api` exists", V),
+            ("infra", "compose service `cache`", C),
+            ("infra", "Helm value `image.tag` exists", V),
+            ("infra", "Helm value `image.tagg`", C),
+            ("infra", "Terraform variable `region` is declared", V),
+            ("infra", "Terraform variable `zone`", C),
+        ],
+        never_verified=[("infra", "`cache`"), ("infra", "`image.tagg`"), ("infra", "`zone`")],
+    ),
+    Case(
+        "anchor links",
+        code={"docs/setup.md": "# Setup\n\n## Install it\n"},
+        run="project",
+        docs={
+            "a.md": "# A\n\nSee [ok](setup.md#install-it), [bad](setup.md#instal-it), [self](#a).\n"
+        },
+        expected=[
+            ("link", "heading for `setup.md#install-it` exists", V),
+            ("link", "`setup.md#instal-it` points to a heading that does not exist", C),
+            ("link", "heading for `#a` exists", V),
+        ],
+        never_verified=[("link", "instal-it")],
+    ),
+    Case(
+        "runbook commands",
+        code=INFRA_FILES,
+        run="project",
+        docs={
+            "run.md": "```bash\nmake test\nmake deploy\nnpm run build\nnpm run buidl\n"
+            "python tools/seed.py\n./scripts/nope.sh\n```\n"
+        },
+        expected=[
+            ("runbook", "Make target `test` exists", V),
+            ("runbook", "no `deploy` target", C),
+            ("runbook", "Script `build` exists", V),
+            ("runbook", "no package.json defines that script", C),
+            ("runbook", "The script `tools/seed.py` exists", V),
+            ("runbook", "`scripts/nope.sh` but that file does not exist", C),
+        ],
+        never_verified=[("runbook", "deploy"), ("runbook", "buidl"), ("runbook", "nope.sh")],
+    ),
+    Case(
+        "no infrastructure files means no infrastructure claims",
+        code={"app.py": "x = 1\n"},
+        run="project",
+        docs={"a.md": "Listens on port 8080 in the container. Run `docker compose up web`.\n"},
+        expected=[],
+    ),
+]
+
+ALL_CASES = API_CASES + UNRESOLVED_CASES + PROJECT_CASES + INFRA_CASES

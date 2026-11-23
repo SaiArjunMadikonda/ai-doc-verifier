@@ -1077,7 +1077,9 @@ def detect_frameworks(root: str | os.PathLike) -> list[str]:
         for p in _walk_files(root, _JS_SUFFIXES)[:500]
     ):
         found.append("express")
-    return found
+    from more_routes import detect as detect_more
+
+    return found + detect_more(root)
 
 
 def extract_routes(root: str | os.PathLike, frameworks: list[str] | None = None) -> dict:
@@ -1086,7 +1088,8 @@ def extract_routes(root: str | os.PathLike, frameworks: list[str] | None = None)
     frameworks = frameworks or detect_frameworks(root)
     if not frameworks:
         raise StaticRouteError(
-            "No supported web framework (FastAPI, Flask, Django, Express) was found in the code."
+            "No supported web framework (FastAPI, Flask, Django, Express, Go, Spring, Rails, "
+            "ASP.NET) was found in the code."
         )
     routes: list[RouteDef] = []
     unknown: list[str] = []
@@ -1105,6 +1108,14 @@ def extract_routes(root: str | os.PathLike, frameworks: list[str] | None = None)
             unknown += u
         elif framework == "express":
             routes += _express_routes(root)
+        else:
+            from more_routes import READERS
+
+            if framework in READERS:
+                found_routes, found_unknown, found_skipped = READERS[framework](root)
+                routes += found_routes
+                unknown += found_unknown
+                skipped += found_skipped
     if not routes and not unknown:
         raise StaticRouteError(f"Found {', '.join(frameworks)} but could not read any routes.")
     return routes_to_openapi(

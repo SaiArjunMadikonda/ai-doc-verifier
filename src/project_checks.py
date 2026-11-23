@@ -40,7 +40,7 @@ from health import compute_health
 MAX_CODE_BYTES = 400_000
 CODE_EXTENSIONS = (".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx")
 
-CHECK_NAMES = ("env", "flag", "reference", "version", "infra")
+CHECK_NAMES = ("env", "flag", "reference", "version", "infra", "link", "runbook")
 
 
 @dataclass
@@ -166,6 +166,7 @@ class RepoIndex:
     requires_python: tuple[str, Location] | None = None
     engines_node: tuple[str, Location] | None = None
     infra: object | None = None  # infra_checks.InfraIndex, built by verify_project
+    docs_root: Path | None = None  # set when the docs live in a separate repository
 
 
 _ENV_CALL = re.compile(
@@ -848,7 +849,10 @@ def verify_project(
     report = ProjectReport(root=str(root_p))
     from infra_checks import build_index as build_infra_index
     from infra_checks import check_infra
+    from link_checks import check_links
+    from runbook_checks import check_runbook
 
+    idx.docs_root = docs_root_p
     if "infra" in checks:
         idx.infra = build_infra_index(root_p, idx.files)
     runners = {
@@ -857,6 +861,8 @@ def verify_project(
         "reference": check_references,
         "version": check_versions,
         "infra": check_infra,
+        "link": check_links,
+        "runbook": check_runbook,
     }
     for f in collect_doc_files(doc_paths or [root_p]):
         try:

@@ -81,7 +81,7 @@ inputs:
     required: false
     default: ''
   api-code-path:
-    description: 'Folder with the API source code (FastAPI, Flask, Django, Express) that [verify-api] reads when no OpenAPI spec exists. Code is parsed, never executed.'
+    description: 'Folder with the API source code (FastAPI, Flask, Django, Express, Go, Spring, Rails, ASP.NET) that [verify-api] reads when no OpenAPI spec exists. Code is parsed, never executed.'
     required: false
     default: ''
 

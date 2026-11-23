@@ -96,8 +96,8 @@ def test_http_rejects_oversized_body(live):
     big = b"{" + b" " * (server.MAX_BODY + 10) + b"}"
     try:
         status = call(live + "/api/audit", raw=big)[0]
-    except (BrokenPipeError, ConnectionResetError):
-        status = 413  # the server refused before reading the body
+    except (BrokenPipeError, ConnectionResetError, urllib.error.URLError):
+        status = 413  # the server refused before reading the body (the socket was reset)
     assert status == 413
 
 

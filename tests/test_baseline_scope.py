@@ -173,3 +173,20 @@ def test_cli_update_baseline_then_gate(repo, capsys):
 def test_bad_git_ref_exits_2(repo, capsys):
     assert docaudit.main(["--root", str(repo), "--changed-since", "nope"]) == 2
     assert "git" in capsys.readouterr().err
+
+
+def test_run_from_env_uses_base_ref_baseline_and_ignore(repo, monkeypatch):
+    (repo / "src" / "config.py").write_text("import os\nos.environ.get('API_KEY')\n")
+    _git(repo, "commit", "-aq", "-m", "rename env var")
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("DOCS_SUBFOLDER", "docs")
+    monkeypatch.setenv("DOCAUDIT_BASE_REF", "main")
+    result = docaudit.run_from_env(post=False)
+    assert result.scope == ["docs/setup.md"] and result.has_contradictions
+    write_baseline(repo / ".docaudit-baseline.json", result.gate_findings)
+    again = docaudit.run_from_env(post=False)
+    assert not again.has_contradictions and again.baselined
+    # a base ref that does not exist falls back to a full audit instead of failing
+    monkeypatch.setenv("DOCAUDIT_BASE_REF", "no-such-ref")
+    fallback = docaudit.run_from_env(post=False)
+    assert fallback.scope is None

@@ -16,8 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project checks (environment variables, CLI flags, file/function references, version claims) and the combined `[verify-docs]` / `src/docaudit.py` audit.
 - Hand-labeled accuracy evaluation (`evaluation/`) with a precision/recall gate in CI.
 - Local web dashboard (`web/server.py`) and demo project (`examples/shop-demo`).
+- PR-scoped audits (`--changed-since`), baseline (`--update-baseline`) and ignore rules (`.docaudit.json`), SARIF output (`--sarif`).
+- Meeting-notes checks (`src/meeting_notes.py`, `--meeting`): Teams `.vtt` / `.docx` / text transcripts, rule-based decision finder with optional `--ai`, verdicts from the code, action items and draft decision records; dashboard Meeting tab and a made-up demo meeting.
+- Infrastructure checks (Dockerfile `EXPOSE`, compose services and ports, Helm values, Terraform variables), anchor-link checks and runbook-command checks (Makefile targets, package scripts, script paths).
+- Breaking-change detector between git refs (`src/api_diff.py`, `--compare-to`, `--fail-on-breaking`) that names the affected documentation, and deprecation tracking for endpoints the API marks deprecated.
+- Static route readers for Go, Spring (Java/Kotlin), Rails and ASP.NET.
 
 ### Fixed
+- `post_pr_comment` reports a failed `gh pr comment` instead of returning success; the dashboard no longer scrolls sideways on phone widths.
 - Routes declared through string constants or `A + B` path expressions are now read; routes whose path or prefix cannot be determined statically make unmatched claims *uncertain* instead of *contradicted*.
 - A parameter type behind an unresolved external `$ref` is reported *uncertain*, never *verified*.
 - `docaudit.py`: a named `--spec` / `--code` that cannot be read exits `2`; a run that checked nothing fails `--fail-under`.

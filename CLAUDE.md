@@ -24,10 +24,15 @@ AI-powered GitHub Action that analyzes code changes and generates documentation 
 | `utils.py` | Retry logic, backoff calculations |
 | `api_contract.py` | `[verify-api]` — deterministic API Contract Verifier (spec or code vs docs); also a CLI |
 | `static_routes.py` | Reads routes from FastAPI/Flask/Django/Express code with `ast`/regex (never executes code) |
+| `more_routes.py` | Same for Go, Spring (Java/Kotlin), Rails and ASP.NET; every route is `unresolved` (no parameter types) |
 | `doc_formats.py` | Converts `.rst` / `.adoc` to Markdown with a line map |
 | `examples_check.py` | Verifies curl/requests/fetch examples and JSON sample responses |
 | `project_checks.py` | Env vars, CLI flags, file/function references, version claims |
-| `docaudit.py` | `[verify-docs]` — runs all deterministic checks, one combined health score |
+| `infra_checks.py`, `link_checks.py`, `runbook_checks.py` | Dockerfile/compose/Helm/Terraform claims; `#anchor` links; `make`/`npm run`/script commands |
+| `docaudit.py` | `[verify-docs]` — runs all deterministic checks, one combined health score; `--changed-since`, baseline, SARIF, `--meeting`, `--compare-to` |
+| `baseline.py`, `changed_files.py`, `sarif.py` | Known-problem baseline and ignore rules; PR-scoped doc selection; SARIF 2.1.0 output |
+| `meeting_notes.py` | Teams `.vtt`/`.docx`/text notes → decisions checked against code and docs (rules first, optional `--ai` only proposes) |
+| `api_diff.py` | Breaking-change detector between two git refs plus the docs it affects |
 | `health.py`, `suggestions.py` | Health score/trend history; optional AI rewrites of contradicted claims |
 
 ## Development
