@@ -143,6 +143,11 @@
   .note-card .fix { font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-top: 2px; }
   .copy { border: 1px solid var(--rule); background: var(--wash); border-radius: 4px; padding: 1px 8px; font-size: 12px; cursor: pointer; }
 
+  .meeting { padding: 14px 20px 16px; display: grid; gap: 8px; }
+  .meeting h3 { margin: 0; font: 600 18px var(--serif); }
+  .meeting h4 { margin: 8px 0 0; font: 600 15px var(--sans); }
+  .meeting .sub { margin: 0 0 4px; color: var(--muted); font-size: 14px; }
+  .meeting ul { margin: 0; padding-left: 20px; font-size: 14px; }
   .gaps { padding: 14px 20px 6px; }
   .gaps h3 { margin: 0 0 4px; font: 600 18px var(--serif); }
   .gaps p { margin: 8px 0 2px; color: var(--muted); font-size: 14px; }
@@ -190,12 +195,16 @@
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" id="tab-spec" aria-controls="pane-spec" aria-selected="true">OpenAPI spec<small>JSON or YAML</small></button>
         <button class="tab" role="tab" id="tab-docs" aria-controls="pane-docs" aria-selected="false">Documentation<small>Markdown, reStructuredText or AsciiDoc</small></button>
+        <button class="tab" role="tab" id="tab-meeting" aria-controls="pane-meeting" aria-selected="false">Meeting notes<small>Optional: Teams .vtt or text</small></button>
       </div>
       <div class="pane" id="pane-spec" role="tabpanel" aria-labelledby="tab-spec">
         <textarea id="spec" spellcheck="false" aria-label="OpenAPI spec" placeholder='Paste your spec here, or drop a file.&#10;&#10;{"openapi": "3.1.0", "paths": { ... }}'></textarea>
       </div>
       <div class="pane" id="pane-docs" role="tabpanel" aria-labelledby="tab-docs" hidden>
         <textarea id="docs" spellcheck="false" aria-label="Documentation" placeholder="Paste your docs here, or drop a file.&#10;&#10;### GET /users&#10;&#10;| Name | Type | Required |&#10;|---|---|---|"></textarea>
+      </div>
+      <div class="pane" id="pane-meeting" role="tabpanel" aria-labelledby="tab-meeting" hidden>
+        <textarea id="meeting" spellcheck="false" aria-label="Meeting notes" placeholder="Paste meeting notes or a Teams .vtt transcript, or drop a file.&#10;&#10;Priya: We are renaming /orders to /purchases next quarter.&#10;Marcus: The /invoices endpoint was retired."></textarea>
       </div>
       <div class="editor-foot">
         <button class="link" id="open">Open a file</button>
@@ -240,7 +249,7 @@
   /* ---------- tabs and files ---------- */
   function selectTab(name) {
     activeTab = name;
-    ["spec", "docs"].forEach((t) => {
+    ["spec", "docs", "meeting"].forEach((t) => {
       $("tab-" + t).setAttribute("aria-selected", String(t === name));
       $("pane-" + t).hidden = t !== name;
     });
@@ -265,7 +274,7 @@
     reader.onload = () => loadText(target, String(reader.result), file.name);
     reader.readAsText(file);
   }
-  ["spec", "docs"].forEach((t) => {
+  ["spec", "docs", "meeting"].forEach((t) => {
     const area = $(t);
     area.addEventListener("input", updateCount);
     area.addEventListener("dragover", (e) => { e.preventDefault(); area.classList.add("drag"); });
@@ -277,6 +286,7 @@
   });
   $("tab-spec").addEventListener("click", () => selectTab("spec"));
   $("tab-docs").addEventListener("click", () => selectTab("docs"));
+  $("tab-meeting").addEventListener("click", () => selectTab("meeting"));
   $("open").addEventListener("click", () => $("file").click());
   $("file").addEventListener("change", (e) => { if (e.target.files[0]) readFile(e.target.files[0], activeTab); e.target.value = ""; });
   $("clear").addEventListener("click", () => { $(activeTab).value = ""; updateCount(); $(activeTab).focus(); });
@@ -298,7 +308,7 @@
     try {
       const res = await fetch("/api/audit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec: $("spec").value, docs: $("docs").value, format: $("format").value }),
+        body: JSON.stringify({ spec: $("spec").value, docs: $("docs").value, format: $("format").value, meeting: $("meeting").value }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -320,7 +330,7 @@
       const res = await fetch("/api/demo");
       const d = await res.json();
       if (!res.ok) return showError(d.error || "Demo unavailable.");
-      $("spec").value = d.spec; $("docs").value = d.docs; $("format").value = d.format;
+      $("spec").value = d.spec; $("docs").value = d.docs; $("format").value = d.format; $("meeting").value = d.meeting || "";
       selectTab("docs");
       run();
     } catch (e) { showError("The local server did not answer."); }
@@ -495,9 +505,37 @@
     return box;
   }
 
+  function meetingPanel() {
+    const m = state.meeting;
+    if (!m) return null;
+    const panel = el("div", "panel meeting");
+    panel.appendChild(el("h3", "", "Meeting follow-ups"));
+    const c = m.counts;
+    panel.appendChild(el("p", "sub", m.findings.length || m.actions.length
+      ? `${plural(m.findings.length, "decision")} found in ${plural(m.utterances, "remark")}: ${c.contradicted} docs out of date, ${c.uncertain} not shipped yet or unclear, ${c.verified} already reflected.`
+      : "Nothing in these notes looked like a documentation-affecting decision. Try wording such as “rename X to Y” or “X was removed”."));
+    const order = { contradicted: 0, uncertain: 1, verified: 2 };
+    m.findings.slice().sort((a, b) => order[a.verdict] - order[b.verdict]).forEach((f) => {
+      const card = el("div", "note-card " + KIND[f.verdict]);
+      const why = el("div", "why");
+      why.appendChild(document.createTextNode((f.pending ? "Not shipped yet" : LABEL[f.verdict]) + ": ")); rich(why, f.message);
+      card.appendChild(why);
+      card.appendChild(el("div", "ev", `${f.time || "no time"}, ${f.speaker || "unknown"}: “${f.quote}”`));
+      if (f.fix) { const fx = el("div", "fix"); const t = el("span"); t.appendChild(document.createTextNode("Suggested fix: ")); rich(t, f.fix); fx.appendChild(t); card.appendChild(fx); }
+      panel.appendChild(card);
+    });
+    if (m.actions.length) {
+      panel.appendChild(el("h4", "", "Action items about documentation"));
+      const ul = el("ul"); m.actions.forEach((a) => ul.appendChild(el("li", "", `${a.owner || "Someone"}${a.time ? " (" + a.time + ")" : ""}: ${a.text}`)));
+      panel.appendChild(ul);
+    }
+    return panel;
+  }
+
   function render() {
     results.replaceChildren();
     const gaps = gapsPanel();
+    const meetingBox = meetingPanel();
     if (!state.findings.length) {
       const empty = el("div", "panel welcome");
       empty.appendChild(el("h2", "", "No endpoint claims found"));
@@ -505,6 +543,7 @@
       empty.appendChild(el("p", "", "The checker looks for endpoints written like GET /users/{id} in headings, tables, lists or sentences. Add one and check again." +
         (total ? ` Your spec defines ${plural(total, "operation")}, listed below. Each one is a good place to start documenting.` : "")));
       results.appendChild(empty);
+      if (meetingBox) results.appendChild(meetingBox);
       if (gaps) results.appendChild(gaps);
       return;
     }
@@ -513,6 +552,7 @@
     const by = breakdownPanel(); if (by) results.appendChild(by);
     results.appendChild(filterBar());
     results.appendChild(docView());
+    if (meetingBox) results.appendChild(meetingBox);
     if (gaps) results.appendChild(gaps);
     applyFilter();
   }

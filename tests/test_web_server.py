@@ -99,3 +99,35 @@ def test_http_rejects_oversized_body(live):
     except (BrokenPipeError, ConnectionResetError):
         status = 413  # the server refused before reading the body
     assert status == 413
+
+
+def test_meeting_notes_are_checked_against_the_pasted_spec_and_docs():
+    meeting = (
+        "Ana: The /gone endpoint was retired.\nBo: We will rename /users to /people.\nCy: Lunch?\n"
+    )
+    out = server.analyze({"spec": json.dumps(SPEC), "docs": DOCS, "meeting": meeting})
+    by = {f["subject"]: f for f in out["meeting"]["findings"]}
+    assert by["`/gone`"]["verdict"] == "contradicted"
+    assert by["`/users` → `/people`"]["pending"] is True
+    assert out["meeting"]["counts"]["contradicted"] == 1
+
+
+def test_meeting_is_optional_and_vtt_is_detected():
+    assert "meeting" not in server.analyze({"spec": json.dumps(SPEC), "docs": DOCS})
+    vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n<v Ana>The /gone endpoint was retired.</v>\n"
+    out = server.analyze({"spec": json.dumps(SPEC), "docs": DOCS, "meeting": vtt})
+    assert out["meeting"]["findings"][0]["time"] == "00:00:01"
+
+
+def test_demo_includes_a_meeting():
+    d = server.demo()
+    assert d["meeting"].startswith("WEBVTT")
+    out = server.analyze(d)
+    assert out["meeting"]["findings"]
+
+
+def test_meeting_in_the_dashboard_does_not_guess_about_source_files():
+    notes = "Ana: shop/config.py was removed.\nBo: We renamed --format to --output-format.\n"
+    out = server.analyze({"spec": json.dumps(SPEC), "docs": DOCS, "meeting": notes})
+    assert {f["verdict"] for f in out["meeting"]["findings"]} == {"uncertain"}
+    assert all("only the API definition" in f["message"] for f in out["meeting"]["findings"])

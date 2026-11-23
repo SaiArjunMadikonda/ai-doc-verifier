@@ -1,0 +1,6 @@
+image:
+  repository: shop
+  tag: latest
+replicaCount: 2
+service:
+  port: 8000

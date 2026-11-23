@@ -2,15 +2,16 @@
 
 | Verdict | Checks |
 |---|---|
-| ✅ Verified | 17 |
-| ❌ Contradicted | 16 |
+| ✅ Verified | 24 |
+| ❌ Contradicted | 20 |
 | ❓ Uncertain | 0 |
 
-**Documentation health: 51.5 / 100**
+**Documentation health: 54.5 / 100**
 
 Needs the most attention:
 - `docs/setup.md`: 46.2/100 (7 contradicted, 0 uncertain)
-- `docs/api.md`: 55/100 (9 contradicted, 0 uncertain)
+- `docs/operations.md`: 50/100 (4 contradicted, 0 uncertain)
+- `docs/api.md`: 60.9/100 (9 contradicted, 0 uncertain)
 
 ## 🔎 API Contract Verification
 
@@ -102,10 +103,22 @@ Needs the most attention:
 
 ## 🧭 Project facts check
 
-Checked **13** claim(s) in **2** doc file(s): ✅ 6 verified · ❌ 7 contradicted · ❓ 0 uncertain · health **46.2/100**
+Checked **24** claim(s) in **3** doc file(s): ✅ 13 verified · ❌ 11 contradicted · ❓ 0 uncertain · health **54.2/100**
 
 #### ❌ Contradicted
 
+- `docs/operations.md:5` (infra) The docs say port 9000 but the project exposes 5432, 8000.
+  - Evidence: 5432 at docker-compose.yml:8; 8000 at Dockerfile:5
+  - Suggested fix: Use one of the exposed ports (5432, 8000) or expose 9000.
+- `docs/operations.md:8` (infra) The docs mention compose service `queue` but no such service is defined (services: api, db).
+  - Evidence: searched the docker-compose file(s)
+  - Suggested fix: Fix the service name or remove the sentence.
+- `docs/operations.md:15` (infra) The docs use Helm value `image.tags` but values.yaml has no such key.
+  - Evidence: searched values.yaml
+  - Suggested fix: Use `image.tag`.
+- `docs/operations.md:16` (infra) The docs use Terraform variable `instance_size` but no `variable "instance_size"` block exists.
+  - Evidence: searched *.tf files
+  - Suggested fix: Use `instance_type`.
 - `docs/setup.md:5` (env) Environment variable `SHOP_DATABASE` is documented but never read by the code (the code reads 2 other variable(s)).
   - Evidence: searched os.environ / os.getenv / process.env / .env.example
   - Suggested fix: Remove `SHOP_DATABASE` from the docs or add support for it in the code.

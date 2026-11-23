@@ -103,6 +103,7 @@ class RouteDef:
     responses: dict[str, dict | None] = field(default_factory=dict)  # code -> schema
     unresolved: bool = False
     source: str = ""  # file:line
+    deprecated: bool = False
 
 
 # ------------------------------------------------------------------------ small helpers
@@ -650,6 +651,7 @@ def _build_route(framework, verb, full, local_path, func, call, models, mod) -> 
     if framework == "fastapi":
         params, body, unresolved = _fastapi_function(func, local_path, models)
         route.params, route.body, route.unresolved = params, body, unresolved
+        route.deprecated = _const(_kw(call, "deprecated")) is True
         model_node = _kw(call, "response_model") or func.returns
         schema = None
         if model_node is not None:
@@ -1039,6 +1041,8 @@ def routes_to_openapi(
             op["responses"][code] = entry
         if r.unresolved:
             op["x-unresolved"] = True
+        if r.deprecated:
+            op["deprecated"] = True
         item[r.method.lower()] = op
     unknown_methods = sorted({_openapi_path(p) for p in unknown_methods})
     for path in unknown_methods:

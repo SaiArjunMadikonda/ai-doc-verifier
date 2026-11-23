@@ -6,7 +6,8 @@ Local web dashboard for the documentation checker.
 It serves one page and one endpoint, using only the Python standard library:
 
 * ``POST /api/audit``  JSON body with ``spec`` (OpenAPI JSON or YAML), ``docs`` (the doc
-  text) and ``format`` (``md``, ``rst`` or ``adoc``)
+  text), ``format`` (``md``, ``rst`` or ``adoc``) and optionally ``meeting`` (meeting notes:
+  Teams ``.vtt`` text or plain ``Name: text`` lines)
 * ``GET  /api/demo``   the bundled demo project (spec read from its code, plus its API docs)
 
 Everything runs on your machine. The spec and docs you paste are only parsed: no
@@ -25,7 +26,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from api_contract import Spec, SpecError, load_spec_from_code, verify_docs  # noqa: E402
+from api_contract import (  # noqa: E402
+    Spec,
+    SpecError,
+    load_spec_from_code,
+    normalize_path,
+    verify_docs,
+)
+from meeting_notes import (  # noqa: E402
+    Corpus,
+    parse_text,
+    parse_vtt,
+    verify_meeting,
+)
 
 PAGE = Path(__file__).with_name("index.html")
 DEMO_DIR = ROOT / "examples" / "shop-demo"
@@ -72,13 +85,37 @@ def analyze(payload: dict) -> dict:
         report = verify_docs(spec, [tmp], tmp)
     out = report.to_dict()
     out["endpoints_in_spec"] = len(spec.operations)
+    meeting = payload.get("meeting")
+    if isinstance(meeting, str) and meeting.strip():
+        out["meeting"] = check_meeting(meeting, str(payload.get("spec", "")), docs, name)
     return out
+
+
+def check_meeting(meeting: str, spec_text: str, docs: str, doc_name: str) -> dict:
+    """Check pasted meeting notes against the pasted spec and docs (no repository here)."""
+    spec = parse_spec(spec_text)
+    utterances = (
+        parse_vtt(meeting) if meeting.lstrip().startswith("WEBVTT") else parse_text(meeting)
+    )
+    corpus = Corpus(
+        code={"the spec": spec_text},
+        docs={doc_name: docs},
+        routes={normalize_path(p) for (_m, p) in spec.operations},
+        api_only=True,
+    )
+    return verify_meeting(utterances, corpus, "your meeting notes").to_dict()
 
 
 def demo() -> dict:
     spec = load_spec_from_code(DEMO_DIR)
     docs = (DEMO_DIR / "docs" / "api.md").read_text(encoding="utf-8")
-    return {"spec": json.dumps(spec.data, indent=2), "docs": docs, "format": "md"}
+    meeting = (DEMO_DIR / "meetings" / "api-sync.vtt").read_text(encoding="utf-8")
+    return {
+        "spec": json.dumps(spec.data, indent=2),
+        "docs": docs,
+        "format": "md",
+        "meeting": meeting,
+    }
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -11,7 +11,7 @@ DEMO = Path(__file__).resolve().parent.parent / "examples" / "shop-demo"
 def test_demo_planted_mistakes_are_all_found():
     result = docaudit.audit(DEMO, [DEMO / "docs"], code_path=str(DEMO))
     bad = [f.message for f in result.findings if f.verdict == CONTRADICTED]
-    assert len(bad) == 16
+    assert len(bad) == 20
     expected = [
         "Parameter `offset`",
         "Parameter `email`: docs say optional",
@@ -29,6 +29,10 @@ def test_demo_planted_mistakes_are_all_found():
         "`build_orders()`",
         "`deploy.md`",
         "Python 3.9+",
+        "port 9000",
+        "compose service `queue`",
+        "Helm value `image.tags`",
+        "Terraform variable `instance_size`",
     ]
     for needle in expected:
         assert any(needle in m for m in bad), needle

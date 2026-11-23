@@ -40,13 +40,13 @@ from health import compute_health
 MAX_CODE_BYTES = 400_000
 CODE_EXTENSIONS = (".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx")
 
-CHECK_NAMES = ("env", "flag", "reference", "version")
+CHECK_NAMES = ("env", "flag", "reference", "version", "infra")
 
 
 @dataclass
 class ProjectFinding:
     verdict: str
-    check: str  # env | flag | reference | version
+    check: str  # env | flag | reference | version | infra | link | runbook
     file: str
     line: int
     subject: str  # what the docs claim, e.g. "`API_KEY`"
@@ -165,6 +165,7 @@ class RepoIndex:
     doc_files: set[str] = field(default_factory=set)
     requires_python: tuple[str, Location] | None = None
     engines_node: tuple[str, Location] | None = None
+    infra: object | None = None  # infra_checks.InfraIndex, built by verify_project
 
 
 _ENV_CALL = re.compile(
@@ -845,11 +846,17 @@ def verify_project(
             )
     rel_base = docs_root_p or root_p
     report = ProjectReport(root=str(root_p))
+    from infra_checks import build_index as build_infra_index
+    from infra_checks import check_infra
+
+    if "infra" in checks:
+        idx.infra = build_infra_index(root_p, idx.files)
     runners = {
         "env": check_env,
         "flag": check_flags,
         "reference": check_references,
         "version": check_versions,
+        "infra": check_infra,
     }
     for f in collect_doc_files(doc_paths or [root_p]):
         try:

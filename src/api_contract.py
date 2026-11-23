@@ -88,6 +88,7 @@ class Operation:
     response_schemas: dict[str, dict] = field(default_factory=dict)
     unresolved: bool = False  # something could not be resolved ($ref to elsewhere)
     pointer: str = ""
+    deprecated: bool = False
 
 
 def _pointer_escape(part: str) -> str:
@@ -220,6 +221,7 @@ class Spec:
                 pointer = f"#/paths/{_pointer_escape(raw_path)}/{method}"
                 operation = Operation(method.upper(), raw_path, pointer=pointer)
                 operation.unresolved = (not ok) or bool(op.get("x-unresolved"))
+                operation.deprecated = op.get("deprecated") is True
                 merged: dict[tuple[str, str], tuple[dict, str]] = {}
                 for i, p in enumerate(path_params):
                     pr, pok = self.resolve_ref(p)
@@ -482,6 +484,7 @@ class Claim:
     line: int
     params: list[DocParam] = field(default_factory=list)
     statuses: list[str] = field(default_factory=list)
+    md_line: int = 0  # line in the converted markdown (``line`` is mapped back to the source)
 
     @property
     def path(self) -> str:
@@ -1110,12 +1113,41 @@ def verify_claim(claim: Claim, spec: Spec) -> tuple[list[Finding], Operation | N
     return findings, op
 
 
-def verify(claims: list[Claim], spec: Spec) -> Report:
+_DEPRECATION_WORDS = re.compile(r"deprecat|sunset|obsolete|end[- ]of[- ]life|will be removed", re.I)
+
+
+def _deprecation_finding(claim: Claim, op: Operation, lines: list[str]) -> Finding | None:
+    """The API marks *op* deprecated; say so when its docs section never mentions it."""
+    start = max(claim.md_line - 1, 0)
+    section = [lines[start]] if start < len(lines) else []
+    for line in lines[start + 1 : start + 25]:
+        if re.match(r"^\s{0,3}#{1,6}\s", line):
+            break  # the next heading starts another endpoint
+        section.append(line)
+    if _DEPRECATION_WORDS.search("\n".join(section)):
+        return None
+    return Finding(
+        UNCERTAIN,
+        claim,
+        "deprecation",
+        f"`{op.method} {op.path}` is marked deprecated in the API, but the docs present it as current.",
+        op.pointer,
+        "Add a deprecation note to this section (and name the replacement endpoint).",
+    )
+
+
+def verify(
+    claims: list[Claim], spec: Spec, doc_lines: dict[str, list[str]] | None = None
+) -> Report:
     report = Report(claims_checked=len(claims), spec_source=spec.source)
     documented: set[tuple[str, str]] = set()
     for claim in claims:
         findings, op = verify_claim(claim, spec)
         report.findings += findings
+        if op is not None and op.deprecated and doc_lines and claim.file in doc_lines:
+            note = _deprecation_finding(claim, op, doc_lines[claim.file])
+            if note:
+                report.findings.append(note)
         if op is not None:
             documented.add((op.method, normalize_path(op.path)))
             doc_names = {p.name for p in claim.params}
@@ -1140,6 +1172,7 @@ def verify_docs(
     """Convenience wrapper: read docs, extract claims (and examples), verify them."""
     claims: list[Claim] = []
     example_findings: list[Finding] = []
+    doc_lines: dict[str, list[str]] = {}
     examples_checked = 0
     root_p = Path(root).resolve()
     for f in collect_doc_files(doc_paths):
@@ -1153,7 +1186,9 @@ def verify_docs(
             rel = str(f)
         markdown, linemap = to_markdown(text, kind_of(f))
         file_claims = extract_claims(markdown, rel.replace("\\", "/"))
+        doc_lines[rel.replace("\\", "/")] = markdown.splitlines()
         for c in file_claims:
+            c.md_line = c.line
             c.line = remap_line(linemap, c.line)
         claims += file_claims
         if check_examples:
@@ -1164,7 +1199,7 @@ def verify_docs(
                 finding.claim.line = remap_line(linemap, finding.claim.line)
             example_findings += found
             examples_checked += count
-    report = verify(claims, spec)
+    report = verify(claims, spec, doc_lines)
     report.findings += example_findings
     report.examples_checked = examples_checked
     report.docs_root = str(root_p)
