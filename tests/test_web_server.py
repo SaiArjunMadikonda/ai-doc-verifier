@@ -138,7 +138,7 @@ def test_meeting_in_the_dashboard_does_not_guess_about_source_files():
 
 def test_workspace_shows_real_audit_edits_and_evaluation():
     data = server.snapshot()
-    assert data["health"]["score"] == 54.5 and len(data["findings"]) == 44
+    assert data["health"]["score"] == 55.7 and len(data["findings"]) == 44
     assert data["decision_counts"] == {"ready": 2, "pending": 3, "verified": 1}
     edits = [edit for d in data["decisions"] for edit in d["edits"]]
     assert any("--output-format" in e["after"] and e["file"] == "docs/setup.md" for e in edits)

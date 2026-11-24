@@ -214,6 +214,25 @@ def test_file_and_link_references(tmp_path):
     )
 
 
+def test_historical_mentions_are_distinct_from_current_file_references(tmp_path):
+    report = run(
+        tmp_path,
+        {
+            "guide.md": "Use `shop/config.py`; `old/loader.py` was removed.\n"
+            "Open `old/loader.py` to configure the service.\n"
+            "We removed `old/tool.py` and now use `shop/cli.py`.\n"
+        },
+        checks=("reference",),
+    )
+    assert [(f.line, f.verdict) for f in report.findings if f.subject == "`old/loader.py`"] == [
+        (1, UNCERTAIN),
+        (2, CONTRADICTED),
+    ]
+    assert {f.subject for f in by(report, VERIFIED)} == {"`shop/config.py`", "`shop/cli.py`"}
+    assert all(not f.fix for f in by(report, UNCERTAIN))
+    assert "`old/tool.py`" in {f.subject for f in by(report, UNCERTAIN)}
+
+
 def test_function_references(tmp_path):
     report = run(
         tmp_path,

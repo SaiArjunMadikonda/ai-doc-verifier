@@ -29,3 +29,52 @@ jobs:
       - run: uv python install 3.12
       - run: uv sync --extra dev
       - run: uv run pytest -v --cov=src --cov-report=term-missing --cov-fail-under=60
+
+  action-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: verifier
+          persist-credentials: false
+      - name: Create a repository with a documented endpoint
+        run: |
+          git init --initial-branch=main
+          git config user.name 'Action smoke test'
+          git config user.email 'action@example.invalid'
+          git remote add origin .
+          mkdir docs
+          echo '### GET /users' > docs/guide.md
+          echo '{"openapi":"3.0.3","info":{"title":"Users","version":"1"},"paths":{"/users":{"get":{"responses":{"200":{"description":"OK"}}}}}}' > openapi.json
+          git add docs openapi.json
+          git commit -m 'Document GET /users'
+          echo "SMOKE_BASE=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Verify the documented endpoint through the action
+        uses: ./verifier
+        with:
+          github-token: ${{ github.token }}
+          comment-body: '[verify-docs]'
+          docs-subfolder: docs
+          api-spec-path: openapi.json
+          dry-run: 'true'
+      - name: Rename the endpoint while keeping the guide unchanged
+        run: |
+          sed -i 's|/users|/customers|' openapi.json
+          git commit -am 'Rename the endpoint'
+      - name: Check the affected guide through the scoped action
+        id: drift
+        uses: ./verifier
+        continue-on-error: true
+        env:
+          DOCAUDIT_BASE_REF: ${{ env.SMOKE_BASE }}
+        with:
+          github-token: ${{ github.token }}
+          comment-body: '[verify-docs]'
+          docs-subfolder: docs
+          api-spec-path: openapi.json
+          dry-run: 'true'
+      - name: Confirm the action rejected the stale guide
+        env:
+          OUTCOME: ${{ steps.drift.outcome }}
+          STATUS: ${{ steps.drift.outputs.status }}
+        run: test "$OUTCOME" = failure && test "$STATUS" = failed

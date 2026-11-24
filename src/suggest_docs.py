@@ -242,8 +242,9 @@ def main():
     if "[verify-docs]" in os.environ.get("COMMENT_BODY", "").lower():
         from docaudit import run_from_env as run_audit
 
-        if run_audit(post=not args.dry_run) is None:
-            sys.exit(1)  # the audit could not run (unreadable config or docs setup failed)
+        result = run_audit(post=not args.dry_run)
+        if result is None or result.has_contradictions:
+            sys.exit(1)
         return
 
     # [verify-api] is deterministic (no LLM, no index), so handle it before any model setup.

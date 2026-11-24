@@ -3,14 +3,14 @@
 | Verdict | Checks |
 |---|---|
 | ✅ Verified | 24 |
-| ❌ Contradicted | 20 |
-| ❓ Uncertain | 0 |
+| ❌ Contradicted | 19 |
+| ❓ Uncertain | 1 |
 
-**Documentation health: 54.5 / 100**
+**Documentation health: 55.7 / 100**
 
 Needs the most attention:
-- `docs/setup.md`: 46.2/100 (7 contradicted, 0 uncertain)
 - `docs/operations.md`: 50/100 (4 contradicted, 0 uncertain)
+- `docs/setup.md`: 50/100 (6 contradicted, 1 uncertain)
 - `docs/api.md`: 60.9/100 (9 contradicted, 0 uncertain)
 
 ## 🔎 API Contract Verification
@@ -103,7 +103,7 @@ Needs the most attention:
 
 ## 🧭 Project facts check
 
-Checked **24** claim(s) in **3** doc file(s): ✅ 13 verified · ❌ 11 contradicted · ❓ 0 uncertain · health **54.2/100**
+Checked **24** claim(s) in **3** doc file(s): ✅ 13 verified · ❌ 10 contradicted · ❓ 1 uncertain · health **56.2/100**
 
 #### ❌ Contradicted
 
@@ -128,9 +128,6 @@ Checked **24** claim(s) in **3** doc file(s): ✅ 13 verified · ❌ 11 contradi
 - `docs/setup.md:9` (flag) CLI flag `--format` is documented but not defined in the code (2 flag(s) are defined).
   - Evidence: searched argparse / click / commander definitions
   - Suggested fix: Remove `--format` from the docs or add the option to the CLI.
-- `docs/setup.md:12` (reference) The file `shop/config.py` does not exist in the repository.
-  - Evidence: searched the repository file list
-  - Suggested fix: Fix or remove the reference to `shop/config.py`.
 - `docs/setup.md:13` (reference) `build_orders()` is documented but the code defines `build_order` instead.
   - Evidence: shop/cli.py:6
   - Suggested fix: Use `build_order()` in the docs.
@@ -140,4 +137,10 @@ Checked **24** claim(s) in **3** doc file(s): ✅ 13 verified · ❌ 11 contradi
 - `docs/setup.md:3` (version) The docs say Python 3.9+ but the project requires Python 3.11+.
   - Evidence: pyproject.toml:4 (>=3.11)
   - Suggested fix: Change the docs to say Python 3.11+.
+
+<details><summary>❓ Uncertain</summary>
+
+- `docs/setup.md:12` (reference) The docs describe a past change to `shop/config.py`.
+
+</details>
 

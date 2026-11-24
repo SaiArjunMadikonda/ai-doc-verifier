@@ -573,6 +573,11 @@ _PATH_EXT_ANY = _PATH_EXT_BARE + (
 )
 _LINK = re.compile(r"(?<!\\)!?\[[^\]\n]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 _SYMBOL = re.compile(r"^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\([^`]*\)$")
+_PAST_CHANGE = r"(?:removed|deleted|retired|renamed|moved|replaced)"
+_HISTORICAL_AFTER = re.compile(rf"^\s+(?:was|has been|had been)\s+{_PAST_CHANGE}\b", re.I)
+_HISTORICAL_BEFORE = re.compile(
+    rf"\b(?:we|they|the team)\s+{_PAST_CHANGE}\s+(?:the file\s+)?$", re.I
+)
 
 
 def _resolve_path(rel: str, doc_dir: str, idx: RepoIndex) -> str | None:
@@ -691,9 +696,28 @@ def check_references(lines, file, idx, linemap) -> list[ProjectFinding]:
             ):
                 continue
             add_path_finding(target, dl.number, "linked file")
-        for span in _CODE_SPAN.findall(dl.text):
-            span = span.strip()
+        for match in _CODE_SPAN.finditer(dl.text):
+            span = match[1].strip()
             if _looks_like_path(span) and "*" not in span:
+                if _HISTORICAL_AFTER.match(dl.text[match.end() :]) or _HISTORICAL_BEFORE.search(
+                    dl.text[: match.start()]
+                ):
+                    # A working tree cannot establish when a file was removed or renamed.
+                    # Keep current uses (including clickable links) independently checkable.
+                    if ("historical path", span) not in seen:
+                        seen.add(("historical path", span))
+                        out.append(
+                            ProjectFinding(
+                                UNCERTAIN,
+                                "reference",
+                                file,
+                                remap_line(linemap, dl.number),
+                                f"`{span}`",
+                                f"The docs describe a past change to `{span}`.",
+                                "the current checkout alone cannot confirm the file's history",
+                            )
+                        )
+                    continue
                 add_path_finding(span, dl.number, "file")
                 continue
             sm = _SYMBOL.match(span)

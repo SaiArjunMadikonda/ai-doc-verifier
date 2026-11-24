@@ -28,6 +28,7 @@ from api_contract import (
     VERIFIED,
     Report,
     SpecError,
+    collect_doc_files,
     post_pr_comment,
     render_markdown,
     resolve_spec,
@@ -41,7 +42,7 @@ from baseline import (
     load_ignore_rules,
     write_baseline,
 )
-from changed_files import GitError, changed_files, docs_to_check
+from changed_files import GitError, api_docs_to_check, changed_files, docs_to_check, is_doc
 from health import Health, append_history, compute_health, render_health
 from meeting_notes import MeetingReport, render_meeting_markdown
 from meeting_notes import run as run_meeting
@@ -73,6 +74,19 @@ class AuditResult:
     def health(self) -> Health:
         return compute_health(self.findings)
 
+    @property
+    def threshold_health(self) -> Health:
+        """Health for --fail-under, excluding explicitly accepted contradictions."""
+        if not self.baselined:
+            return self.health
+        return compute_health(
+            [
+                f
+                for f in self.findings
+                if f.verdict != CONTRADICTED or fingerprint(f) not in self.baselined
+            ]
+        )
+
     def count(self, verdict: str) -> int:
         return sum(1 for f in self.findings if f.verdict == verdict)
 
@@ -97,6 +111,7 @@ class AuditResult:
     def to_dict(self) -> dict:
         return {
             "health": self.health.to_dict(),
+            "threshold_health": self.threshold_health.to_dict(),
             "counts": {v: self.count(v) for v in (VERIFIED, CONTRADICTED, UNCERTAIN)},
             "notes": self.notes,
             "new_contradictions": len(self.new_contradictions),
@@ -139,7 +154,8 @@ def audit(
     """Run the selected checks and return the combined result.
 
     With *changed_since* (a git ref such as ``origin/main``) only the docs a change touches
-    are checked: docs it edited and docs that mention a code file it edited. *baseline_path*
+    are checked: edited pages, references to changed files and pages whose API checks differ.
+    *baseline_path*
     lists known problems that must not fail the run; *ignore_path* lists deliberate ones.
 
     With *require_api* (set when the caller explicitly named a spec, code folder or app) a
@@ -154,11 +170,25 @@ def audit(
     result = AuditResult()
     if changed_since:
         changed = changed_files(root_p, changed_since, head)
-        picked = docs_to_check(root_p, changed)
+        picked = set(docs_to_check(root_p, changed))
+        if run_api and any(not is_doc(path) for path in changed):
+            if app:
+                # Runtime apps can only be inspected in the working tree.
+                picked.update(p.resolve() for p in collect_doc_files(docs))
+            else:
+                picked.update(
+                    api_docs_to_check(
+                        root_p, changed_since, head, docs, spec_path=spec_path, code_path=code_path
+                    )
+                )
+        picked = sorted(picked)
         if doc_paths:  # an explicit doc list narrows the choice further
             allowed = [Path(d).resolve() for d in doc_paths]
             picked = [p for p in picked if any(p == a or a in p.parents for a in allowed)]
-        result.scope = [p.relative_to(root_p).as_posix() for p in picked]
+        result.scope = [
+            p.relative_to(root_p).as_posix() if p.is_relative_to(root_p) else p.as_posix()
+            for p in picked
+        ]
         if not picked:
             result.notes.append(
                 f"No documentation is affected by the {len(changed)} file(s) changed "
@@ -237,6 +267,11 @@ def render_audit_markdown(
             f"{len(result.new_contradictions)} new contradiction(s).",
             "",
         ]
+        score = result.threshold_health.score
+        if score is None:
+            out += ["No unbaselined checks contribute to the health threshold.", ""]
+        else:
+            out += [f"Health for the threshold after applying the baseline: {score:g}/100.", ""]
     if result.ignored:
         out += [f"> 🙈 {result.ignored} finding(s) hidden by ignore rules.", ""]
     if result.api:
@@ -340,7 +375,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Print JSON instead of Markdown")
     parser.add_argument("--history", help="JSON file that keeps the health score over time")
     parser.add_argument(
-        "--fail-under", type=float, metavar="SCORE", help="Exit 1 when health is below SCORE"
+        "--fail-under",
+        type=float,
+        metavar="SCORE",
+        help="Exit 1 when health excluding baselined contradictions is below SCORE",
     )
     parser.add_argument(
         "--changed-since",
@@ -428,8 +466,13 @@ def main(argv: list[str] | None = None) -> int:
         print("Nothing was checked: no verifiable claims were found in the docs.", file=sys.stderr)
         if args.fail_under is not None:
             return 1  # an empty run must not pass a quality gate
-    if args.fail_under is not None and score is not None and score < args.fail_under:
-        print(f"Health {score:g} is below {args.fail_under:g}", file=sys.stderr)
+    threshold_score = result.threshold_health.score
+    if (
+        args.fail_under is not None
+        and threshold_score is not None
+        and threshold_score < args.fail_under
+    ):
+        print(f"Health {threshold_score:g} is below {args.fail_under:g}", file=sys.stderr)
         return 1
     return 1 if args.fail_under is None and result.has_contradictions else 0
 
