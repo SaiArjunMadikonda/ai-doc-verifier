@@ -1,0 +1,82 @@
+name: Meeting documentation drafts
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+  push:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    if: vars.MEETING_DOCS_ENABLED == 'true' && (github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch)
+    concurrency:
+      group: meeting-docs-${{ github.repository }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MEETING_BASE_BRANCH: ${{ github.event.repository.default_branch || github.ref_name }}
+      DOCS_PATH: ${{ vars.MEETING_DOCS_PATH || 'docs' }}
+      CODE_PATH: ${{ vars.MEETING_CODE_PATH || '.' }}
+      SPEC_PATH: ${{ vars.MEETING_SPEC_PATH }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch || github.ref_name }}
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - name: Open the decision database
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          state="$RUNNER_TEMP/meeting-state"
+          ref=refs/heads/meeting-docs-state
+          if git ls-remote --exit-code --heads origin "$ref" > /dev/null; then
+            git fetch --no-tags origin "$ref"
+            git worktree add --detach "$state" FETCH_HEAD
+          else
+            rc=$?
+            if [[ "$rc" != 2 ]]; then exit "$rc"; fi
+            git worktree add --orphan -b meeting-docs-state "$state"
+          fi
+      - name: Collect Microsoft notes
+        if: github.event_name != 'push'
+        shell: bash
+        env:
+          MS_TENANT_ID: ${{ vars.MS_TENANT_ID }}
+          MS_CLIENT_ID: ${{ vars.MS_CLIENT_ID }}
+          MS_CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
+          TEAMS_ORGANIZER_ID: ${{ vars.TEAMS_ORGANIZER_ID }}
+          TEAMS_MEETING_ID: ${{ vars.TEAMS_MEETING_ID }}
+          ONEDRIVE_DRIVE_ID: ${{ vars.ONEDRIVE_DRIVE_ID }}
+          ONEDRIVE_FOLDER_ID: ${{ vars.ONEDRIVE_FOLDER_ID }}
+        run: |
+          opts=()
+          if [[ -n "$SPEC_PATH" ]]; then opts+=(--spec "$SPEC_PATH"); fi
+          uv run --no-project --python 3.12 --with pyyaml python src/meeting_sync.py \
+            --graph --state "$RUNNER_TEMP/meeting-state/decisions.db" \
+            --docs "$DOCS_PATH" --code "$CODE_PATH" "${opts[@]}"
+      - name: Save decisions before publishing drafts
+        if: github.event_name != 'push'
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/meeting-state"
+          git add -- decisions.db
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update imported technical decisions'
+            git push origin HEAD:refs/heads/meeting-docs-state
+          fi
+      - name: Recheck decisions and open draft pull requests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          opts=()
+          if [[ -n "$SPEC_PATH" ]]; then opts+=(--spec "$SPEC_PATH"); fi
+          uv run --no-project --python 3.12 --with pyyaml python src/meeting_sync.py \
+            --publish --state "$RUNNER_TEMP/meeting-state/decisions.db" \
+            --docs "$DOCS_PATH" --code "$CODE_PATH" "${opts[@]}"
