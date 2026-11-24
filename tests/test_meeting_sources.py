@@ -88,3 +88,70 @@ def test_application_token_is_requested_from_tenant(monkeypatch):
         )
         == "test-token"
     )
+
+
+def test_loop_uses_graph_html_conversion_and_preserves_bullet_boundaries(monkeypatch):
+    monkeypatch.setattr(ms, "_access_token", lambda env: "token")
+    monkeypatch.setattr(
+        ms, "_pages", lambda url, token: [{"name": "Meeting.loop", "file": {}, "id": "n"}]
+    )
+
+    def content(url, *, token, accept):
+        assert url == ms.GRAPH + "/drives/d/items/n/content?format=html" and accept == "text/html"
+        return b"<html><head><title>Private title</title></head><body><ul><li>We renamed <b>--old</b> to --new.</li><li>We removed /old.</li></ul><script>do not import</script></body></html>"
+
+    monkeypatch.setattr(ms, "_request", content)
+    [(source, remarks)] = ms.graph_notes({"ONEDRIVE_DRIVE_ID": "d", "ONEDRIVE_FOLDER_ID": "f"})
+    assert source.endswith("/items/n")
+    assert [r.text for r in remarks] == ["We renamed --old to --new.", "We removed /old."]
+
+
+def test_tenant_rotates_attempts_and_resumes_successful_organizers(monkeypatch):
+    people = [str(ms.uuid.UUID(int=i)) for i in range(1, 28)]
+    cursors = {}
+    monkeypatch.setattr(ms, "_access_token", lambda env: "token")
+    visited = []
+
+    def lists(url, token):
+        if "/users?" in url:
+            return [{"id": u, "accountEnabled": True, "userType": "Member"} for u in people] + [
+                {"id": "ignored", "accountEnabled": True, "userType": "Guest"},
+                {"id": "disabled", "accountEnabled": False, "userType": "Member"},
+            ]
+        user = url.split("/users/")[1].split("/")[0]
+        visited.append((user, url))
+        if user == people[0]:
+            raise ms.GraphError(403)
+        return [{"id": "t", "meetingId": "m"}]
+
+    monkeypatch.setattr(ms, "_pages", lists)
+    monkeypatch.setattr(ms, "_transcript", lambda key, token: [])
+
+    def collect():
+        return list(
+            ms.graph_notes(
+                {"TEAMS_SCOPE": "tenant"}, last_sync=cursors.get, checkpoint=cursors.__setitem__
+            )
+        )
+
+    assert len(collect()) == 24
+    assert len(visited) == 25 and "organizer:" + people[0] not in cursors
+    visited.clear()
+    collect()
+    assert [u for u, _ in visited[:2]] == people[-2:]
+    assert any("startDateTime=" in url for _, url in visited)
+    assert "startDateTime=" not in visited[0][1]
+
+
+def test_explicit_organizer_does_not_enumerate_users(monkeypatch):
+    user = str(ms.uuid.UUID(int=3))
+    monkeypatch.setattr(ms, "_access_token", lambda env: "token")
+
+    def pages(url, token):
+        assert f"/users/{user}/onlineMeetings/getAllTranscripts(" in url
+        assert f"meetingOrganizerUserId='{user}'" in url
+        raise ms.GraphError(403)
+
+    monkeypatch.setattr(ms, "_pages", pages)
+    with pytest.raises(ms.GraphError):
+        list(ms.graph_notes({"TEAMS_SCOPE": "organizer", "TEAMS_ORGANIZER_ID": user}))

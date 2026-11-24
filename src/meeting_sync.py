@@ -12,6 +12,7 @@ import tempfile
 from collections import defaultdict
 from contextlib import closing
 from dataclasses import dataclass, field
+from itertools import chain
 from pathlib import Path
 
 from api_contract import SpecError, collect_doc_files, resolve_spec
@@ -23,6 +24,14 @@ from meeting_notes import (
     extract_statements,
     token_kind,
     verify_statement,
+)
+from meeting_review import (
+    conflicts,
+    owners_file,
+    owners_for,
+    publish_conflicts,
+    release_sentence,
+    request_reviews,
 )
 from meeting_sources import graph_notes, read_export
 from security_utils import sanitize_output
@@ -44,13 +53,38 @@ class Decision:
         return Statement(self.kind, "", old=self.old, new=self.new, subject=self.subject)
 
 
-def remember(database, sources):
+def remember(database, sources, *, graph_env=None):
     """A revised source replaces its own decisions. A failed import rolls back as a unit."""
     with closing(sqlite3.connect(database, timeout=45)) as db, db:
         db.execute("BEGIN IMMEDIATE")
         db.execute(
             "CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY, decisions TEXT NOT NULL)"
         )
+        if graph_env is not None:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS checkpoints (id TEXT PRIMARY KEY, until TEXT NOT NULL)"
+            )
+
+            def cursor_key(key):
+                return hashlib.sha256(
+                    f"{graph_env.get('MS_TENANT_ID', '')}/{key}".encode()
+                ).hexdigest()
+
+            def last_sync(key):
+                row = db.execute(
+                    "SELECT until FROM checkpoints WHERE id=?", (cursor_key(key),)
+                ).fetchone()
+                return row[0] if row else None
+
+            def checkpoint(key, until):
+                db.execute(
+                    "INSERT OR REPLACE INTO checkpoints VALUES (?, ?)", (cursor_key(key), until)
+                )
+
+            sources = chain(
+                sources, graph_notes(graph_env, last_sync=last_sync, checkpoint=checkpoint)
+            )
+
         for source, utterances in sources:
             records = set()
             for s in extract_statements(utterances):
@@ -177,7 +211,7 @@ def apply_changes(root, proposal):
         path.write_bytes("".join(lines).encode("utf-8"))
 
 
-def publish(root, proposal, repo, base):
+def publish(root, proposal, repo, base, owners=()):
     """Use the same branch across imports, retries, reruns and duplicate sources."""
     owner = repo.split("/")[0]
     branch = "meeting-docs/" + proposal.decision.key
@@ -198,6 +232,7 @@ def publish(root, proposal, repo, base):
     ]
     existing = json.loads(command(lookup, root).stdout)
     if existing:
+        request_reviews(command, root, repo, existing[0], owners)
         return f"already reviewed or open (PR #{existing[0]['number']})"
     title = (
         f"docs: update {proposal.decision.subject or proposal.decision.old} from meeting decision"
@@ -240,7 +275,10 @@ def publish(root, proposal, repo, base):
                     f"- `{rel}:{line}`\n"
                     for rel, edits in proposal.changes.items()
                     for line in edits
-                ),
+                )
+                + "\n### Release note\n\n"
+                + release_sentence(proposal.decision)
+                + "\n",
                 encoding="utf-8",
             )
             result = command(
@@ -262,6 +300,12 @@ def publish(root, proposal, repo, base):
                 ],
                 tree,
             )
+            if owners:
+                number = int(result.stdout.strip().rstrip("/").rsplit("/", 1)[-1])
+                pull = json.loads(
+                    command(["gh", "api", f"repos/{repo}/pulls/{number}"], root).stdout
+                )
+                request_reviews(command, root, repo, pull, owners)
             return result.stdout.strip()
         finally:
             command(["git", "worktree", "remove", "--force", str(tree)], root)
@@ -285,7 +329,9 @@ def main(argv=None):
         "--state", required=True, type=Path, help="Persistent SQLite file outside the checkout"
     )
     parser.add_argument(
-        "--publish", action="store_true", help="Create draft PRs (default: preview)"
+        "--publish",
+        action="store_true",
+        help="Create draft PRs, request reviews and report conflicts (default: preview)",
     )
     parser.add_argument("--base", default=os.environ.get("MEETING_BASE_BRANCH"))
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"))
@@ -337,27 +383,33 @@ def main(argv=None):
             corpus.code = {(prefix / name).as_posix(): text for name, text in corpus.code.items()}
             corpus.files = {(prefix / name).as_posix() for name in corpus.files}
 
-        def sources():
-            for path in args.notes:
-                yield path.resolve().as_posix(), read_export(path)
-            if args.graph:
-                yield from graph_notes()
-
-        decisions = remember(args.state, sources())
+        routes = owners_file(root)
+        sources = ((p.resolve().as_posix(), read_export(p)) for p in args.notes)
+        decisions = remember(args.state, sources, graph_env=os.environ if args.graph else None)
         print(f"Checking {len(decisions)} unique meeting decision(s).")
-        for proposal in plan(
+        proposals = plan(
             decisions,
             corpus,
             can_check_removed_routes=spec is not None and not spec.unresolved_routes,
-        ):
+        )
+        alerts = conflicts(proposals, corpus, routes, args.base or "HEAD")
+        for _, body in alerts.values():
+            print(body.split(" -->\n", 1)[1].split("\n<!--", 1)[0])
+        if args.publish:
+            publish_conflicts(command, root, args.repo, alerts)
+        for proposal in proposals:
             d = proposal.decision
             description = " ".join(filter(None, (d.kind, d.subject, d.old, d.new)))
             print(f"{proposal.status}: {description}")
             for rel, edits in proposal.changes.items():
                 for number, (before, after) in edits.items():
                     print(f"  {rel}:{number}\n  - {before}\n  + {after}")
-            if args.publish and proposal.status == "ready":
-                print(publish(root, proposal, args.repo, args.base))
+            if proposal.status == "ready":
+                owners = owners_for(proposal.changes, routes)
+                if owners:
+                    print("  Reviewers: " + ", ".join(owners))
+                if args.publish:
+                    print(publish(root, proposal, args.repo, args.base, owners))
     except subprocess.CalledProcessError as exc:
         detail = sanitize_output((exc.stderr or "").strip()) or "command returned no diagnostic"
         print(

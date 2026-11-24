@@ -56,6 +56,26 @@ def test_conflicts_values_and_removals():
     assert all(p.status == "conflicting decisions" and not p.changes for p in conflicts)
 
 
+def test_graph_cursor_and_decisions_commit_together(tmp_path, monkeypatch):
+    state = tmp_path / "state.db"
+    cursors = []
+
+    def feed(env, *, last_sync, checkpoint):
+        cursors.append(last_sync("organizer:private"))
+        yield "notes", parse_text(RENAME)
+        checkpoint("organizer:private", env["next"])
+        if env.get("fail"):
+            raise ValueError("incomplete page")
+
+    monkeypatch.setattr(sync, "graph_notes", feed)
+    assert len(sync.remember(state, [], graph_env={"next": "one"})) == 1
+    with pytest.raises(ValueError):
+        sync.remember(state, [], graph_env={"next": "two", "fail": True})
+    sync.remember(state, [], graph_env={"next": "three"})
+    assert cursors == [None, "one", "one"]
+    assert b"organizer:private" not in state.read_bytes()
+
+
 def test_full_publish_retries_without_duplicate_or_checkout_changes(tmp_path, monkeypatch):
     root = tmp_path / "project"
     root.mkdir()
@@ -74,6 +94,9 @@ def test_full_publish_retries_without_duplicate_or_checkout_changes(tmp_path, mo
     git("config", "core.autocrlf", "false")
     git("remote", "add", "origin", origin.as_uri())
     (root / "docs").mkdir()
+    config = root / ".code-to-docs"
+    config.mkdir()
+    (config / "meeting-owners.json").write_text('{"docs/": ["@reviewer"]}')
     doc = root / "docs" / "guide.md"
     doc.write_bytes(b"Guide\r\nUse --format.\r\n")
     (root / "cli.py").write_text("option = '--format'\n")
@@ -101,11 +124,26 @@ def test_full_publish_retries_without_duplicate_or_checkout_changes(tmp_path, mo
     original = sync.command
     created = []
     attempts = []
+    requests = []
 
     def gh_or_git(cmd, cwd, **kwargs):
         if cmd[0] != "gh":
             return original(cmd, cwd, **kwargs)
         if cmd[1] == "api":
+            if "--input" in cmd:
+                requests.append(json.loads(Path(cmd[-1]).read_bytes()))
+                if len(requests) == 1:
+                    raise subprocess.CalledProcessError(1, cmd)
+                return subprocess.CompletedProcess(cmd, 0, "{}")
+            if cmd[-1].endswith("/timeline?per_page=100"):
+                timeline = (
+                    [{"event": "review_requested", "requested_reviewer": {"login": "reviewer"}}]
+                    if len(requests) > 1
+                    else []
+                )
+                return subprocess.CompletedProcess(cmd, 0, json.dumps([timeline]))
+            if cmd[-1].endswith("/pulls/42"):
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(created[0]))
             assert "state=all" in cmd and "base=main" in cmd
             return subprocess.CompletedProcess(cmd, 0, json.dumps(created))
         assert "--draft" in cmd
@@ -114,13 +152,16 @@ def test_full_publish_retries_without_duplicate_or_checkout_changes(tmp_path, mo
         attempts.append(cmd[cmd.index("--head") + 1])
         if len(attempts) == 1:
             raise subprocess.CalledProcessError(1, cmd)
-        created.append({"number": 42})
-        return subprocess.CompletedProcess(cmd, 0, "draft 42")
+        assert "Renamed `--format` to `--output-format`." in body
+        created.append({"number": 42, "state": "open", "user": {"login": "author"}})
+        return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/app/pull/42")
 
     monkeypatch.setattr(sync, "command", gh_or_git)
     assert sync.main(args) == 1  # branch exists, PR creation interrupted
-    assert sync.main(args) == 0  # retry without the original transcript
+    assert sync.main(args) == 1  # PR exists, reviewer request interrupted
+    assert sync.main(args) == 0  # recover using the PR and saved decision
     assert sync.main([*args, "--notes", str(notes)]) == 0
+    assert requests == [{"reviewers": ["reviewer"], "team_reviewers": []}] * 2
     assert len(created) == 1 and attempts[0] == attempts[1]
     assert (
         git("--git-dir", origin, "show", attempts[0] + ":docs/guide.md")

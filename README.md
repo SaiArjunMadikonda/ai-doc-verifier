@@ -314,7 +314,16 @@ Output includes the speaker and timestamp as evidence, suggested edits, action i
 
 ### Collect Teams meetings and draft documentation updates
 
-The **Meeting documentation drafts** workflow checks one scheduled Teams meeting or recurring series, one OneDrive for Business folder, or both. It polls hourly and on manual runs. Each push to the default branch rechecks previously imported decisions against the latest code. A meeting must have a transcript available to Graph. OneDrive collection reads directly contained `.vtt`, `.docx`, `.txt` and `.md` exports. Export native Loop notes to a supported format for this pilot.
+The **Meeting documentation drafts** workflow imports Microsoft 365 notes, extracts technical decisions, and checks them against the repository. Hourly and manual runs collect notes. Pushes to the default branch recheck saved decisions when code changes. The workflows stay idle until a repository administrator explicitly enables them.
+
+| Source | What it collects |
+| --- | --- |
+| Teams, single meeting | Available transcripts for one Graph online meeting or recurring series. |
+| Teams, organizer | Available transcripts from scheduled meetings organized by one user. |
+| Teams, tenant | Enumerates enabled member users and polls up to 25 organizers per run, starting with the least recently attempted. The application access policy determines which organizers it can read. |
+| OneDrive for Business | Direct children of one configured folder. Reads native `.loop` notes through Microsoft's HTML conversion, plus `.vtt`, `.docx`, `.txt` and `.md` exports. Can run alone or alongside Teams. |
+
+Organizer and tenant discovery cover scheduled, non-channel meetings that have a transcript. Meetings without a transcript can contribute written notes saved in the selected folder. On the first pass, the collector requests available history. Later passes resume each organizer with a one-day overlap. A denied organizer keeps its previous transcript checkpoint for a future retry. [Microsoft Graph transcript discovery](https://learn.microsoft.com/en-us/graph/api/onlinemeeting-getalltranscripts?view=graph-rest-1.0) · [Loop HTML conversion](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content-format?view=graph-rest-1.0)
 
 **Try it locally.** Run from the project directory with Python 3.12 or newer. The first command imports the shop demo transcript, prints proposed line edits, and stores the decisions in a local database. The second rechecks them without reopening the transcript. Both commands leave the docs untouched.
 
@@ -326,12 +335,36 @@ python src/meeting_sync.py --root examples/shop-demo --docs docs --state ../shop
 **Connect a repository.** Install the workflow and the Python `src/` modules on the default branch of the repo containing the code and docs. For the loose Windows distribution, run `_protected_files/RESTORE.ps1` to place the workflows under `.github/workflows/`. In a bundle clone they are already there.
 
 1. Register a Microsoft Entra application for the project. For Teams, grant the `OnlineMeetingTranscript.Read.All` application permission, administrator consent and an application access policy for the organizer. For OneDrive, grant read access to the selected library folder, for example through `Files.SelectedOperations.Selected` plus an explicit folder grant. Configure the permissions for the sources you use. [Teams transcript permissions](https://learn.microsoft.com/en-us/graph/api/onlinemeeting-list-transcripts?view=graph-rest-1.0) · [Organizer policy](https://learn.microsoft.com/en-us/graph/cloud-communication-online-meeting-application-access-policy) · [OneDrive selected permissions](https://learn.microsoft.com/en-us/graph/permissions-selected-overview)
-2. In GitHub Actions, set repository variables `MS_TENANT_ID` and `MS_CLIENT_ID` and the repository **secret** `MS_CLIENT_SECRET`. For Teams, set `TEAMS_ORGANIZER_ID` and `TEAMS_MEETING_ID` to the Graph user and onlineMeeting IDs. For OneDrive, set `ONEDRIVE_DRIVE_ID` and `ONEDRIVE_FOLDER_ID` to the drive and folder item IDs. These are Graph resource IDs. [Look up a meeting by its join URL](https://learn.microsoft.com/en-us/graph/api/onlinemeeting-get?view=graph-rest-1.0) · [Address OneDrive items](https://learn.microsoft.com/en-us/graph/onedrive-addressing-driveitems)
+2. In GitHub Actions, set repository variables `MS_TENANT_ID` and `MS_CLIENT_ID` and the repository **secret** `MS_CLIENT_SECRET`. Choose the source configuration below. Supply Graph resource IDs for the selected sources. [Look up a meeting by its join URL](https://learn.microsoft.com/en-us/graph/api/onlinemeeting-get?view=graph-rest-1.0) · [Address OneDrive items](https://learn.microsoft.com/en-us/graph/onedrive-addressing-driveitems)
+   - For one meeting, set `TEAMS_ORGANIZER_ID` and `TEAMS_MEETING_ID`. The default `TEAMS_SCOPE` is `meeting`.
+   - For one organizer, set `TEAMS_SCOPE=organizer` and `TEAMS_ORGANIZER_ID` (the user's object ID). Leave the meeting ID empty.
+   - For tenant discovery, set `TEAMS_SCOPE=tenant` and leave both individual Teams IDs empty. Grant admin consent to the `User.Read.All` application permission for member discovery and assign the Teams application access policy to the intended organizers. [Directory user permissions](https://learn.microsoft.com/en-us/graph/api/user-list?view=graph-rest-1.0)
+   - For a OneDrive folder, set `ONEDRIVE_DRIVE_ID` and `ONEDRIVE_FOLDER_ID`. For OneDrive alone, leave the Teams variables blank.
 3. Set `MEETING_DOCS_PATH` to the guide or folder to edit (default `docs`) and `MEETING_CODE_PATH` to the implementation folder (default `.`). Optionally set `MEETING_SPEC_PATH` to a committed OpenAPI spec. All three paths are relative to the project root. Allow GitHub Actions to create pull requests in repository workflow settings. Set `MEETING_DOCS_ENABLED=true` and run **Meeting documentation drafts** from the Actions tab.
 
-**What reviewers see.** When current code supports a decision, the workflow opens a draft PR containing a specific edit and repository evidence. It can replace a renamed identifier, update an unambiguous documented value, or mark a removed Markdown endpoint heading as historical. Conflicting decisions and prose that needs editorial judgment are flagged in the run output. Each decision has a stable PR branch. Repeat imports and retries reuse its PR history, including closed PRs. Existing drafts remain available for human review.
+**What reviewers see.** When current code supports a decision, the workflow opens a draft PR with an edit, the repository evidence and a proposed release note. It can replace a renamed identifier, update an unambiguous documented value, or mark a removed Markdown endpoint heading as historical. A retry uses the same PR. Uncorroborated decisions stay pending. Ambiguous prose is flagged for manual review.
 
-**What is retained.** The runner reads the notes temporarily. The `meeting-docs-state` branch holds a SQLite database of technical identifiers, values and hashed source IDs. Repository readers can see these decisions, including pending changes. Use a repository whose audience can see that information. No transcript, participant list or meeting quotation is included in a draft. Reimporting an edited file refreshes its decisions. A source that expires or is removed leaves its previously imported decisions available for later code checks.
+**Route reviews and disagreements.** A repository can add an optional `.code-to-docs/meeting-owners.json`. Use an exact file path, a folder prefix ending in `/`, or `*` for the fallback. Values are lists of GitHub users or organization teams with repository access. The most specific path wins for each document. For example:
+
+```json
+{
+  "*": [],
+  "docs/api/": ["@example-org/api-docs"],
+  "docs/setup.md": ["@example-maintainer"]
+}
+```
+
+Local preview prints matched owners. Publishing requests their review on the draft and checks the request history on retries. If notes disagree about one identifier, publishing opens one GitHub issue for that subject and base branch, lists the alternatives and mentions the matched owners. An empty owner map leaves the issue unassigned. Correct the notes, reimport them and close the issue when resolved. Closing an issue records the team's acknowledgement and suppresses further alerts in that thread. Publishing needs GitHub Issues enabled and permission to write issues and pull requests. [GitHub review requests](https://docs.github.com/en/rest/pulls/review-requests)
+
+**Draft release notes.** The **Meeting release note draft** workflow writes Markdown to its Actions run summary for a version tag (`v*.*.*`) or a manual run. It includes same-repository meeting PRs merged into the selected base within the release's Git history. At least one other human must have approved the final PR head before merge, with no outstanding request for changes. The default range begins after the previous reachable version tag and includes the selected commit. The first release covers reachable history. A release manager can copy the draft into the changelog. To save it locally, run from a full checkout with a GitHub CLI login that can read the repository:
+
+```bash
+python src/meeting_release.py --repo OWNER/REPO --base main --from-ref v1.0.0 --to-ref v1.1.0 --output meeting-release.md
+```
+
+The optional `--state` argument supplies the original decision wording for older meeting PRs. A PR whose wording cannot be recovered still gets a generic entry and PR number.
+
+**What is retained.** The runner reads the notes temporarily. The `meeting-docs-state` branch holds a SQLite database of technical identifiers, values, hashed source IDs and per-organizer sync timestamps keyed by hash. Repository readers can see these decisions, including pending changes. Use a repository whose audience can see that information. Reimporting an edited file refreshes its decisions. A source that expires or is removed leaves its previously imported decisions available for later code checks.
 
 ## Web Dashboard and Demo
 
