@@ -3,21 +3,26 @@ Local web dashboard for the documentation checker.
 
     python web/server.py            # then open http://127.0.0.1:8765
 
-It serves one page and one endpoint, using only the Python standard library:
+The overview reads a local project. The API workbench checks pasted text separately.
 
+* ``GET /`` and ``GET /api/workspace`` show the selected repository audit and meeting decisions.
+* ``GET /portfolio.html`` exports the bundled demo as an offline dashboard.
+* ``GET /workbench`` opens the input editor.
 * ``POST /api/audit``  JSON body with ``spec`` (OpenAPI JSON or YAML), ``docs`` (the doc
   text), ``format`` (``md``, ``rst`` or ``adoc``) and optionally ``meeting`` (meeting notes:
   Teams ``.vtt`` text or plain ``Name: text`` lines)
 * ``GET  /api/demo``   the bundled demo project (spec read from its code, plus its API docs)
 
-Everything runs on your machine. The spec and docs you paste are only parsed: no
-code is executed and nothing is sent anywhere. The server listens on 127.0.0.1 only.
+Pasted inputs are parsed locally. Optional GitHub activity is enabled by an explicit
+command-line setting. The server listens on 127.0.0.1 by default.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
+import subprocess
 import sys
 import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +30,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT))
+
+from web.workspace import dashboard, snapshot  # noqa: E402
 
 from api_contract import (  # noqa: E402
     Spec,
@@ -136,7 +144,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 - http.server API
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
+            self._send(200, dashboard().encode(), "text/html; charset=utf-8")
+        elif path == "/workbench":
             self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif path == "/api/workspace":
+            try:
+                self._json(200, snapshot(**self.server.workspace))
+            except (SpecError, OSError, ValueError, sqlite3.Error, subprocess.SubprocessError) as e:
+                self._json(500, {"error": f"Workspace unavailable: {e}"})
+        elif path == "/portfolio.html":
+            self._send(200, dashboard(snapshot()).encode(), "text/html; charset=utf-8")
         elif path == "/api/demo":
             try:
                 self._json(200, demo())
@@ -168,8 +185,10 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def make_server(host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), Handler)
+def make_server(host: str = "127.0.0.1", port: int = 8765, **workspace) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.workspace = workspace
+    return server
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -178,8 +197,37 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--host", default="127.0.0.1", help="Keep the default unless you trust your network"
     )
+    parser.add_argument("--project", type=Path, default=DEMO_DIR)
+    parser.add_argument("--docs", default="docs", help="Documentation path relative to the project")
+    parser.add_argument("--notes", type=Path, action="append", default=[])
+    parser.add_argument("--state", type=Path, help="Read the meeting sync SQLite database")
+    parser.add_argument(
+        "--release-notes", type=Path, help="Display an existing meeting release draft"
+    )
+    parser.add_argument(
+        "--github-repo", help="Read meeting PRs and conflict issues via authenticated gh"
+    )
+    parser.add_argument("--base", help="Branch to match when reading GitHub PRs")
+    parser.add_argument(
+        "--export-demo", type=Path, help="Write the bundled demo as a standalone HTML file"
+    )
     args = parser.parse_args(argv)
-    server = make_server(args.host, args.port)
+    if args.export_demo:
+        args.export_demo.write_text(dashboard(snapshot()), encoding="utf-8")
+        return 0
+    if args.github_repo and not args.base:
+        parser.error("--github-repo needs --base")
+    server = make_server(
+        args.host,
+        args.port,
+        project=args.project,
+        docs=args.docs,
+        notes=args.notes,
+        state=args.state,
+        release=args.release_notes,
+        repo=args.github_repo,
+        base=args.base,
+    )
     print(f"Open http://{args.host}:{server.server_address[1]}  (Ctrl+C to stop)")
     try:
         server.serve_forever()

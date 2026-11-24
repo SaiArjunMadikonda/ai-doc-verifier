@@ -372,7 +372,23 @@ The optional `--state` argument supplies the original decision wording for older
 python web/server.py     # then open http://127.0.0.1:8765
 ```
 
-Paste a spec and docs (or select **Load the demo**) to see the documentation marked up line by line, with evidence and suggested fixes. It runs only on your machine (localhost), and nothing you paste is executed or uploaded.
+The **Workspace overview** opens with a real audit of the bundled shop demo. Select a document to filter its findings, or open a meeting decision to compare its source note, repository evidence and proposed edit. **Reviews & releases** shows edits ready for review, conflicts, owner routing and release wording. **Evaluations** displays precision, recall and individual case results. Under **API workbench**, choose **Check your inputs** to audit your own spec, docs and optional meeting notes.
+
+For a portfolio, use **Data sources → Download portfolio demo**, or generate the same single-file interactive dashboard:
+
+```bash
+python web/server.py --export-demo portfolio.html
+```
+
+Open the HTML directly in a browser or serve it as a static page. The export always uses the bundled shop fixture. It includes the evidence explorer, meeting decisions, review previews and evaluation results. Running new checks against custom inputs requires the local Python server.
+
+To inspect another project locally, point the server at its checkout. Additional inputs are optional:
+
+```bash
+python web/server.py --project /path/to/repo --docs docs --notes /path/to/meeting.vtt
+```
+
+Use `--state` to read an existing meeting-sync database, `--release-notes` to display a saved release draft, and `--github-repo OWNER/REPO --base BRANCH` to read actual meeting PRs, review requests and conflict issues through an authenticated GitHub CLI. All dashboard views are read-only. The default demo runs locally without accounts.
 
 `examples/shop-demo/` is a small FastAPI project whose docs contain 20 deliberately planted mistakes (API, environment, CLI, files, container, compose, Helm and Terraform); `EXPECTED_OUTPUT.md` is the report the checker produces for it, and a test keeps it current.
 

@@ -79,8 +79,11 @@ def call(url, body=None, raw=None):
 
 def test_http_endpoints(live):
     status, body, headers = call(live + "/")
-    assert status == 200 and b"Does your documentation still match your API?" in body
+    assert status == 200 and b"Workspace overview" in body
     assert headers["X-Content-Type-Options"] == "nosniff"
+    assert b"Does your documentation still match your API?" in call(live + "/workbench")[1]
+    status, body, _ = call(live + "/api/workspace")
+    assert status == 200 and json.loads(body)["demo"] is True
     status, body, _ = call(live + "/api/demo")
     assert status == 200 and "spec" in json.loads(body)
     status, body, _ = call(live + "/api/audit", {"spec": json.dumps(SPEC), "docs": DOCS})
@@ -131,3 +134,87 @@ def test_meeting_in_the_dashboard_does_not_guess_about_source_files():
     out = server.analyze({"spec": json.dumps(SPEC), "docs": DOCS, "meeting": notes})
     assert {f["verdict"] for f in out["meeting"]["findings"]} == {"uncertain"}
     assert all("only the API definition" in f["message"] for f in out["meeting"]["findings"])
+
+
+def test_workspace_shows_real_audit_edits_and_evaluation():
+    data = server.snapshot()
+    assert data["health"]["score"] == 54.5 and len(data["findings"]) == 44
+    assert data["decision_counts"] == {"ready": 2, "pending": 3, "verified": 1}
+    edits = [edit for d in data["decisions"] for edit in d["edits"]]
+    assert any("--output-format" in e["after"] and e["file"] == "docs/setup.md" for e in edits)
+    assert data["evaluation"]["cases"] == 24 and not data["evaluation"]["problems"]
+    assert data["release"] is None and data["github"] is None
+    rename = next(d for d in data["decisions"] if d["old"] == "--format")
+    assert rename["sources"][0]["time"] and rename["sources"][0]["speaker"] == "Dana Ortiz"
+
+
+def test_dashboard_exports_only_bundled_project(tmp_path):
+    import re
+
+    out = tmp_path / "portfolio.html"
+    assert server.main(["--project", str(tmp_path), "--export-demo", str(out)]) == 0
+    html = out.read_text(encoding="utf-8")
+    embedded = re.search(
+        r'<script type="application/json" id="snapshot">(.*?)</script>', html, re.S
+    )
+    assert json.loads(embedded[1])["project"] == "shop-demo"
+    assert "/* DASHBOARD_APP */" not in html and "/* DASHBOARD_STYLES */" not in html
+    assert "</script><unsafe>" not in server.dashboard({"project": "</script><unsafe>"})
+
+
+def test_custom_project_from_saved_decisions_is_read_only(tmp_path):
+    from meeting_notes import parse_text
+    from meeting_sync import remember
+
+    project = tmp_path / "sample"
+    (project / "docs").mkdir(parents=True)
+    (project / "cli.py").write_text("flag = '--new'")
+    (project / "docs/guide.md").write_text("Use --old.")
+    state = tmp_path / "decisions.db"
+    remember(state, [("meeting", parse_text("We renamed `--old` to `--new`."))])
+    before = state.read_bytes()
+    release = tmp_path / "draft.md"
+    release.write_text("An approved release entry")
+    data = server.snapshot(project, state=state, release=release)
+    assert data["demo"] is False and data["decisions"][0]["status"] == "ready"
+    assert data["release"] == release.read_text() and state.read_bytes() == before
+
+
+def test_workspace_reads_only_matching_github_activity(tmp_path, monkeypatch):
+    from web import workspace
+
+    repo = "org/app"
+    branch = "meeting-docs/" + "a" * 24
+    pull = {
+        "head": {"ref": branch, "repo": {"full_name": repo}},
+        "base": {"ref": "main"},
+        "number": 7,
+        "state": "open",
+        "draft": True,
+        "title": "Update guide",
+        "requested_reviewers": [{"login": "editor"}],
+    }
+
+    def pages(run, root, path):
+        if "/pulls?" in path:
+            return [
+                pull,
+                {**pull, "base": {"ref": "other"}},
+                {**pull, "head": {"ref": branch, "repo": {"full_name": "fork/app"}}},
+            ]
+        return [
+            {
+                "number": 8,
+                "title": "Two proposed names",
+                "state": "open",
+                "body": "<!-- meeting-docs-conflict:" + "b" * 24 + " -->",
+            },
+            {"number": 9, "title": "Unrelated issue", "body": ""},
+        ]
+
+    monkeypatch.setattr(workspace, "pages", pages)
+    result = workspace.github_activity(tmp_path, repo, "main")
+    assert [(p["number"], p["owners"], p["status"]) for p in result["pulls"]] == [
+        (7, ["editor"], "draft")
+    ]
+    assert [i["number"] for i in result["issues"]] == [8]
