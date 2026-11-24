@@ -1,1007 +1,1675 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Code-to-Docs Interactive Demo</title>
-    <style>
-        :root {
-            --gh-bg: #0d1117;
-            --gh-bg-secondary: #161b22;
-            --gh-bg-tertiary: #21262d;
-            --gh-border: #30363d;
-            --gh-text: #e6edf3;
-            --gh-text-secondary: #8b949e;
-            --gh-blue: #58a6ff;
-            --gh-green: #3fb950;
-            --gh-green-bg: #238636;
-            --gh-red: #f85149;
-            --gh-diff-green-bg: #0d2818;
-            --gh-diff-red-bg: #2d1214;
-            --gh-diff-green-line: #1a4721;
-            --gh-diff-red-line: #3d1517;
-            --gh-header: #010409;
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
-            background: var(--gh-bg);
-            color: var(--gh-text);
-            min-height: 100vh;
-            overflow: hidden;
-        }
-        .demo-banner {
-            position: fixed; top: 0; left: 0; right: 0; height: 36px;
-            background: linear-gradient(90deg, #238636, #1f6feb);
-            display: flex; align-items: center; justify-content: center; z-index: 3000; gap: 12px;
-        }
-        .demo-badge {
-            background: rgba(255,255,255,0.2); color: white; padding: 2px 10px;
-            border-radius: 12px; font-size: 11px; font-weight: 600; letter-spacing: 1px;
-        }
-        .demo-banner-text { color: white; font-size: 13px; font-weight: 500; }
-        .gh-header {
-            position: fixed; top: 36px; left: 0; right: 0; height: 62px;
-            background: var(--gh-header); border-bottom: 1px solid var(--gh-border);
-            display: flex; align-items: center; padding: 0 24px; z-index: 2500; gap: 16px;
-        }
-        .gh-logo { width: 32px; height: 32px; fill: white; }
-        .gh-header-search {
-            background: var(--gh-bg); border: 1px solid var(--gh-border); border-radius: 6px;
-            padding: 5px 12px; color: var(--gh-text-secondary); font-size: 14px; width: 280px;
-        }
-        .gh-header-nav { display: flex; gap: 16px; margin-left: auto; }
-        .gh-header-nav span { color: var(--gh-text); font-size: 14px; font-weight: 600; cursor: pointer; }
-        .gh-avatar-small { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, #f78166, #d29922); }
-        .demo-container { margin-top: 98px; height: calc(100vh - 98px); overflow-y: auto; }
-        .pr-page { max-width: 1100px; margin: 0 auto; padding: 24px 32px; }
-        .pr-title-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--gh-border); }
-        .pr-title { font-size: 26px; font-weight: 400; color: var(--gh-text); margin-bottom: 8px; }
-        .pr-title .pr-number { color: var(--gh-text-secondary); font-weight: 300; }
-        .pr-status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-        .pr-status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 16px; font-size: 14px; font-weight: 500; }
-        .pr-status-badge.open { background: var(--gh-green-bg); color: white; }
-        .pr-meta { color: var(--gh-text-secondary); }
-        .pr-tabs { display: flex; border-bottom: 1px solid var(--gh-border); margin-bottom: 24px; }
-        .pr-tab {
-            padding: 10px 16px; color: var(--gh-text-secondary); font-size: 14px; cursor: pointer;
-            border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px;
-        }
-        .pr-tab.active { color: var(--gh-text); border-bottom-color: #f78166; font-weight: 600; }
-        .pr-tab .tab-count { background: var(--gh-bg-tertiary); padding: 1px 8px; border-radius: 10px; font-size: 12px; }
-        .diff-file { border: 1px solid var(--gh-border); border-radius: 6px; margin-bottom: 16px; overflow: hidden; }
-        .diff-file-header {
-            background: var(--gh-bg-secondary); padding: 10px 16px; font-size: 13px;
-            font-family: 'SFMono-Regular', Consolas, monospace; border-bottom: 1px solid var(--gh-border);
-            display: flex; align-items: center; gap: 8px;
-        }
-        .diff-file-header .file-icon { color: var(--gh-text-secondary); }
-        .diff-table { width: 100%; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 12px; border-collapse: collapse; }
-        .diff-table td { padding: 1px 10px; white-space: pre; line-height: 20px; vertical-align: top; }
-        .diff-line-num { width: 50px; color: var(--gh-text-secondary); text-align: right; user-select: none; opacity: 0.6; }
-        .diff-line-add { background: var(--gh-diff-green-bg); }
-        .diff-line-add .diff-line-content { background: var(--gh-diff-green-line); }
-        .diff-line-del { background: var(--gh-diff-red-bg); }
-        .diff-line-del .diff-line-content { background: var(--gh-diff-red-line); }
-        .diff-line-content { padding-left: 16px; }
-        .diff-hunk { background: rgba(56, 139, 253, 0.1); color: var(--gh-text-secondary); }
-        .comment { display: flex; gap: 16px; margin-bottom: 24px; animation: fadeInComment 0.4s ease; }
-        @keyframes fadeInComment { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .comment-avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
-        .avatar-user { background: linear-gradient(135deg, #f78166, #d29922); }
-        .avatar-action { background: var(--gh-bg-tertiary); border: 1px solid var(--gh-border); display: flex; align-items: center; justify-content: center; }
-        .avatar-action svg { width: 20px; height: 20px; fill: var(--gh-text-secondary); }
-        .comment-body { flex: 1; border: 1px solid var(--gh-border); border-radius: 6px; overflow: hidden; }
-        .comment-header {
-            background: var(--gh-bg-secondary); padding: 10px 16px; font-size: 14px;
-            border-bottom: 1px solid var(--gh-border); display: flex; align-items: center; gap: 8px;
-        }
-        .comment-header strong { color: var(--gh-text); }
-        .comment-header .comment-time { color: var(--gh-text-secondary); }
-        .comment-content { padding: 16px; font-size: 14px; line-height: 1.6; }
-        .comment-content code { background: rgba(110, 118, 129, 0.2); padding: 2px 6px; border-radius: 4px; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; }
-        .comment-content h3 { margin: 12px 0 8px; font-size: 16px; }
-        .comment-content p { margin-bottom: 10px; }
-        .comment-content ul { margin: 8px 0; padding-left: 24px; }
-        .comment-content li { margin-bottom: 4px; }
-        .doc-checkbox { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; padding: 8px 10px; border-radius: 6px; }
-        .doc-checkbox:hover { background: var(--gh-bg-secondary); }
-        .doc-checkbox input[type="checkbox"] { margin-top: 3px; accent-color: var(--gh-green); width: 16px; height: 16px; pointer-events: none; }
-        .doc-checkbox label { flex: 1; }
-        .doc-checkbox .filename { color: var(--gh-blue); font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; font-weight: 600; }
-        .doc-checkbox .file-description { color: var(--gh-text); font-size: 13px; display: block; margin-top: 4px; line-height: 1.5; }
-        .doc-checkbox .file-suggestion { color: var(--gh-text-secondary); font-size: 13px; display: block; margin-top: 4px; font-style: italic; line-height: 1.5; }
-        .comment-input-area { display: flex; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--gh-border); }
-        .comment-input-box { flex: 1; border: 1px solid var(--gh-border); border-radius: 6px; overflow: hidden; }
-        .comment-input-tabs { display: flex; background: var(--gh-bg-secondary); border-bottom: 1px solid var(--gh-border); padding: 0 12px; }
-        .comment-input-tab { padding: 8px 12px; font-size: 13px; color: var(--gh-text-secondary); }
-        .comment-input-tab.active { color: var(--gh-text); border-bottom: 2px solid #f78166; }
-        .comment-textarea {
-            width: 100%; min-height: 100px; background: var(--gh-bg); border: none; color: var(--gh-text);
-            padding: 12px 16px; font-size: 14px; font-family: 'SFMono-Regular', Consolas, monospace; resize: none; outline: none;
-        }
-        .comment-input-footer { display: flex; justify-content: flex-end; padding: 8px 12px; background: var(--gh-bg-secondary); border-top: 1px solid var(--gh-border); }
-        .btn-comment { background: var(--gh-green-bg); color: white; border: none; padding: 6px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; }
-        .btn-comment:hover { background: #2ea043; }
-        .btn-comment:disabled { opacity: 0.5; cursor: not-allowed; }
-        .collapsible-section { border: 1px solid var(--gh-border); border-radius: 6px; margin: 12px 0; overflow: hidden; }
-        .collapsible-header { background: var(--gh-bg-secondary); padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; }
-        .collapsible-header:hover { background: var(--gh-bg-tertiary); }
-        .collapsible-body { padding: 16px; display: none; font-size: 13px; font-family: 'SFMono-Regular', Consolas, monospace; line-height: 1.6; white-space: pre-wrap; color: var(--gh-text-secondary); }
-        .collapsible-body.open { display: block; }
-        .timeline-line { display: flex; align-items: center; gap: 16px; margin: 16px 0; padding-left: 12px; }
-        .timeline-dot { width: 8px; height: 8px; background: var(--gh-border); border-radius: 50%; margin-left: 16px; }
-        .timeline-text { color: var(--gh-text-secondary); font-size: 13px; }
-        .timeline-text a { color: var(--gh-blue); text-decoration: none; }
-        .typing-indicator { display: flex; gap: 4px; align-items: center; padding: 16px; }
-        .typing-dot { width: 8px; height: 8px; background: var(--gh-text-secondary); border-radius: 50%; animation: typingBounce 1.4s ease-in-out infinite; }
-        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
-        .success-banner { background: rgba(63, 185, 80, 0.1); border: 1px solid rgba(63, 185, 80, 0.3); border-radius: 6px; padding: 16px 20px; margin: 16px 0; display: flex; align-items: center; gap: 12px; font-size: 14px; }
-        .success-banner .success-icon { font-size: 20px; }
-        .highlight-flash { animation: flashHighlight 1.5s ease; }
-        @keyframes flashHighlight { 0% { background: rgba(88, 166, 255, 0.2); } 100% { background: transparent; } }
-        .unchecked-file { opacity: 0.5; }
-        .unchecked-file .filename { text-decoration: line-through; }
-        .unchecked-file .file-description { text-decoration: line-through; }
-        .unchecked-file .file-suggestion { text-decoration: line-through; }
-        .docs-before-after { display: flex; gap: 16px; margin: 16px 0; }
-        .docs-before-after .docs-panel { flex: 1; border: 1px solid var(--gh-border); border-radius: 6px; overflow: hidden; }
-        .docs-panel-header { padding: 8px 16px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--gh-border); display: flex; align-items: center; gap: 8px; }
-        .docs-panel-header.before { background: var(--gh-diff-red-bg); color: var(--gh-red); }
-        .docs-panel-header.after { background: var(--gh-diff-green-bg); color: var(--gh-green); }
-        .docs-panel-content { padding: 16px; font-size: 13px; line-height: 1.7; font-family: 'SFMono-Regular', Consolas, monospace; white-space: pre-wrap; color: var(--gh-text-secondary); max-height: 400px; overflow-y: auto; }
-        .docs-panel-content .doc-heading { color: var(--gh-text); font-weight: 700; }
-        .docs-panel-content .doc-added { background: var(--gh-diff-green-line); color: var(--gh-text); display: block; margin: 2px -16px; padding: 1px 16px; }
-        .docs-file-tabs { display: flex; border-bottom: 1px solid var(--gh-border); margin-bottom: 16px; }
-        .docs-file-tab { padding: 8px 16px; font-size: 13px; color: var(--gh-text-secondary); cursor: pointer; border-bottom: 2px solid transparent; font-family: 'SFMono-Regular', Consolas, monospace; }
-        .docs-file-tab.active { color: var(--gh-text); border-bottom-color: var(--gh-blue); }
-        .docs-file-tab:hover { color: var(--gh-text); }
-        .docs-pr-link {
-            display: inline-flex; align-items: center; gap: 6px; background: var(--gh-bg-secondary);
-            border: 1px solid var(--gh-border); border-radius: 6px; padding: 8px 16px;
-            color: var(--gh-blue); text-decoration: none; font-size: 14px; margin-top: 8px;
-        }
-        .docs-pr-link:hover { border-color: var(--gh-blue); }
-        .narration-box {
-            position: fixed; z-index: 2000; background: linear-gradient(135deg, #1e293b, #0f172a);
-            border: 2px solid #3b82f6; border-radius: 16px; padding: 24px 32px; max-width: 520px; width: 90%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); transition: all 0.4s ease;
-        }
-        .narration-box.position-center { top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; }
-        .narration-box.position-bottom-right { top: auto !important; bottom: 30px !important; left: auto !important; right: 30px !important; transform: none !important; }
-        .narration-box.position-top-right { top: 120px !important; bottom: auto !important; left: auto !important; right: 30px !important; transform: none !important; }
-        .narration-box.position-top-left { top: 120px !important; bottom: auto !important; left: 30px !important; right: auto !important; transform: none !important; }
-        .step-indicator { display: flex; gap: 6px; margin-bottom: 16px; }
-        .step-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.2); transition: all 0.3s; }
-        .step-dot.active { background: #3b82f6; box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
-        .step-dot.completed { background: #22c55e; }
-        #narrationTitle { font-size: 18px; font-weight: 700; color: white; margin-bottom: 10px; }
-        #narrationText { font-size: 14px; color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }
-        #narrationText code { background: rgba(59, 130, 246, 0.2); padding: 2px 6px; border-radius: 4px; color: #93c5fd; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; }
-        .narration-buttons { display: flex; justify-content: space-between; gap: 12px; }
-        .narration-buttons button { padding: 8px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-        .btn-back { background: rgba(255,255,255,0.1); color: #94a3b8; }
-        .btn-back:hover { background: rgba(255,255,255,0.15); }
-        .btn-back:disabled { opacity: 0.3; cursor: not-allowed; }
-        .btn-next { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
-        .btn-next:hover { background: linear-gradient(135deg, #60a5fa, #3b82f6); }
-        .repo-breadcrumb { padding: 16px 32px; max-width: 1100px; margin: 0 auto; font-size: 20px; }
-        .repo-breadcrumb a { color: var(--gh-blue); text-decoration: none; }
-        .repo-breadcrumb .separator { color: var(--gh-text-secondary); margin: 0 4px; }
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#19182a"><meta name="description" content="Explore documentation health, code evidence and meeting-driven edits in Doc Check.">
+<title>Doc Check · Documentation intelligence</title>
+<style>:root {
+  color-scheme: light;
+  --bg: #f7f8fb;
+  --ink: #211f32;
+  --muted: #646679;
+  --rule: #e3e4ec;
+  --violet: #6447d5;
+  --green: #168360;
+  --red: #be415b;
+  --amber: #a26210;
+  --side: #1b1b2c;
+  --mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  font-size: 16px;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+button {
+  cursor: pointer;
+  color: inherit;
+}
+a {
+  color: var(--violet);
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #9576f5;
+  outline-offset: 3px;
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.sr,
+.skip:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.skip:focus {
+  position: fixed;
+  z-index: 20;
+  background: white;
+  padding: 12px;
+}
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+}
+svg.ic {
+  width: 19px;
+  height: 19px;
+  display: block;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--side);
+  color: white;
+  padding: 0 14px;
+  z-index: 5;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 27px 10px 26px;
+  font-size: 23px;
+  letter-spacing: -1.1px;
+}
+.brandmark,
+.footmark,
+.tint {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+.brandmark {
+  color: white;
+  background: linear-gradient(150deg, #a389ff, #704be1);
+  border: 1px solid #b69eff;
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  box-shadow: 0 1px 8px #07051e55;
+}
+.brandmark .ic {
+  width: 22px;
+  height: 22px;
+}
+.navgroup {
+  margin-top: 20px;
+}
+.navgroup:first-child {
+  margin-top: 8px;
+}
+.navtitle,
+.micro,
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.navtitle {
+  padding: 0 12px;
+  color: #a7a7bf;
+  margin-bottom: 9px;
+}
+.navitem {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-decoration: none;
+  color: #c7c6d8;
+  border: 1px solid transparent;
+  padding: 10px 11px;
+  margin: 2px 0;
+  border-radius: 7px;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  font-weight: 500;
+}
+.navitem:hover {
+  background: #ffffff0d;
+  color: white;
+}
+.navitem[aria-current="page"] {
+  background: #393348;
+  border-color: #534866;
+  color: #f1eaff;
+}
+.navitem[aria-current="page"] .ic {
+  color: #c8a7ff;
+}
+.navitem .ic {
+  width: 17px;
+  height: 17px;
+}
+.nbadge {
+  margin-left: auto;
+  font: 600 0.72rem var(--mono);
+  padding: 2px 5px;
+  background: #ffffff12;
+  color: #d6d3e6;
+  border-radius: 4px;
+}
+.sidefoot {
+  border-top: 1px solid #ffffff18;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 18px 3px 20px;
+  color: #ededf5;
+}
+.footmark {
+  width: 30px;
+  height: 30px;
+  background: #303044;
+  color: #c2bbe5;
+  border-radius: 8px;
+}
+.sidefoot b,
+.sidefoot small {
+  display: block;
+}
+.sidefoot b {
+  font-size: 0.81rem;
+}
+.sidefoot small {
+  color: #b8b7ca;
+  font-size: 0.71rem;
+  margin-top: 3px;
+}
+.maincol {
+  min-width: 0;
+}
+.topbar {
+  height: 57px;
+  background: white;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  padding: 0 clamp(20px, 3vw, 52px);
+  gap: 12px;
+}
+.crumb,
+.repochip {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 0.84rem;
+}
+.crumb {
+  color: var(--muted);
+}
+.crumb .ic {
+  width: 16px;
+}
+.crumb b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.crumb i {
+  color: #b4b4c3;
+  font-style: normal;
+}
+.repochip {
+  margin-left: auto;
+  font: 0.8rem var(--mono);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 5px 9px;
+  gap: 7px;
+}
+.repochip .ic {
+  width: 15px;
+  height: 15px;
+}
+main {
+  max-width: 1510px;
+  padding: 28px clamp(20px, 3vw, 52px) 48px;
+  margin: auto;
+}
+.pagehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 21px;
+}
+.pagehead h1 {
+  font-size: clamp(1.8rem, 2.65vw, 2.8rem);
+  line-height: 1.1;
+  letter-spacing: -0.055em;
+  margin: 5px 0 7px;
+  font-weight: 700;
+}
+.pagehead p,
+.sectionhead p,
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+}
+.pagehead .context {
+  font-size: 0.73rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #6c4aba;
+  font-weight: 650;
+}
+.context .ic {
+  width: 13px;
+  height: 13px;
+}
+.btn,
+.iconbtn,
+.textlink,
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 7px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.btn {
+  border: 1px solid var(--rule);
+  background: white;
+  padding: 9px 13px;
+  white-space: nowrap;
+}
+.btn.primary {
+  background: #6243cf;
+  border-color: #593ac2;
+  color: white;
+  box-shadow: 0 2px 4px #33245c18;
+}
+.btn.primary:hover {
+  background: #5032b9;
+}
+.btn .ic,
+.textlink .ic {
+  width: 15px;
+  height: 15px;
+}
+.iconbtn {
+  width: 34px;
+  height: 34px;
+  background: white;
+  border: 1px solid var(--rule);
+}
+.textlink {
+  border: 0;
+  background: none;
+  color: var(--violet);
+  padding: 4px 0;
+  white-space: nowrap;
+}
+.textlink:hover {
+  text-decoration: underline;
+}
+.menu,
+#scrim {
+  display: none;
+}
+.hero {
+  border-radius: 15px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 196px;
+  display: flex;
+  align-items: center;
+  padding: 23px 31px;
+  color: white;
+  background:
+    radial-gradient(ellipse at 84% 45%, #7052bf 0, transparent 52%),
+    linear-gradient(109deg, #242039 7%, #3e315f 62%, #493370 98%);
+  border: 1px solid #3b3154;
+}
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(#c9acf355 1px, transparent 1px);
+  background-size: 14px 14px;
+  mask-image: linear-gradient(100deg, transparent 15%, #000 80%);
+}
+.herotext {
+  z-index: 1;
+}
+.hero h2 {
+  font-size: 1.05rem;
+  font-weight: 550;
+  margin: 0 0 5px;
+  color: #f1eafb;
+}
+.hero .eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #d7c9fc;
+  margin-bottom: 9px;
+}
+.eyebrow .ic {
+  width: 14px;
+  height: 14px;
+}
+.score {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  line-height: 1;
+  margin: 2px 0 10px;
+}
+.score strong {
+  font-size: clamp(3.1rem, 4.5vw, 4.5rem);
+  letter-spacing: -0.07em;
+  font-weight: 650;
+}
+.score span {
+  color: #d4c9e7;
+  font: 0.98rem var(--mono);
+}
+.hero p {
+  font-size: 0.88rem;
+  color: #e0d8ed;
+  margin: 0;
+}
+.art {
+  position: absolute;
+  width: 41%;
+  height: 100%;
+  right: 2%;
+  top: 0;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+.art::before,
+.art::after {
+  content: "";
+  position: absolute;
+  width: 80%;
+  height: 65%;
+  transform: rotate(-24deg) skew(27deg);
+  border: 1px solid #d9c3ff38;
+  border-radius: 13px;
+}
+.art::after {
+  width: 104%;
+  height: 91%;
+  border-style: dashed;
+  opacity: 0.6;
+}
+.sheet {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 146px;
+  height: 102px;
+  border-radius: 9px;
+  border: 1px solid #bc9efc;
+  background: linear-gradient(135deg, #9f87ce, #6b57a8);
+  transform: translate(-50%, -35%) rotate(-25deg) skew(27deg);
+  box-shadow: -6px 8px 0 #28183f45;
+}
+.sheet.mid {
+  transform: translate(-50%, -55%) rotate(-25deg) skew(27deg);
+  background: linear-gradient(135deg, #b7a6e6, #8c72c1);
+}
+.sheet.front {
+  transform: translate(-50%, -75%) rotate(-25deg) skew(27deg);
+  background: linear-gradient(110deg, #faf6ff, #d4c7f0);
+  border-color: #fff;
+  box-shadow:
+    -4px 5px 0 #6f5c99,
+    0 11px 18px #39253b33;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  padding: 15px 18px;
+  gap: 5px;
+}
+.sheet i {
+  display: block;
+  height: 4px;
+  background: #a390c5;
+  border-radius: 4px;
+  width: 61%;
+}
+.sheet i:nth-child(2) {
+  width: 84%;
+  opacity: 0.75;
+}
+.sheet i:nth-child(3) {
+  width: 44%;
+  opacity: 0.7;
+}
+.seal {
+  border: 2px solid #a8d4c8;
+  background: #d3f6e4;
+  position: absolute;
+  bottom: 9px;
+  right: 13px;
+  color: #216e59;
+  border-radius: 6px;
+  padding: 2px;
+}
+.seal .ic {
+  width: 21px;
+  height: 21px;
+  stroke-width: 2.8;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 13px;
+  margin: 15px 0 20px;
+}
+.metric,
+.panel {
+  border: 1px solid var(--rule);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 3px #22223203;
+}
+.metric {
+  display: block;
+  text-align: left;
+  padding: 14px 16px;
+  min-width: 0;
+}
+.metric:hover,
+.filebtn:hover,
+.rowbtn:hover,
+.case:hover {
+  background: #f8f7fd;
+}
+.metrictop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #555669;
+}
+.tint {
+  width: 29px;
+  height: 29px;
+  border-radius: 8px;
+  background: #f0ecfd;
+  color: var(--violet);
+}
+.tint .ic {
+  width: 16px;
+  height: 16px;
+}
+.green {
+  background: #e4f4ed;
+  color: #197150;
+}
+.red {
+  background: #fff0f2;
+  color: #aa344f;
+}
+.amber {
+  background: #fff2d9;
+  color: #935c0f;
+}
+.blue {
+  background: #eaf0ff;
+  color: #4967a5;
+}
+.metric strong {
+  display: block;
+  font-size: 1.95rem;
+  letter-spacing: -0.055em;
+  font-weight: 650;
+  line-height: 1.1;
+  margin-top: 9px;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.panel {
+  padding: 20px;
+  min-width: 0;
+}
+.panel + .panel.stack {
+  margin-top: 16px;
+}
+.sectionhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.sectionhead h2,
+.panel h3 {
+  font-size: 1.08rem;
+  letter-spacing: -0.025em;
+  margin: 0;
+  font-weight: 650;
+}
+.sectionhead p {
+  font-size: 0.8rem;
+  margin-top: 3px;
+}
+.legend {
+  display: flex;
+  gap: 13px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  flex-wrap: wrap;
+}
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--green);
+}
+.swatch.bad {
+  background: #d77880;
+}
+.swatch.unsure {
+  background: #dbb165;
+}
+.filebtn {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: white;
+  text-align: left;
+  padding: 8px 0;
+}
+.filetop,
+.rowflex {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.filetop {
+  font: 0.8rem var(--mono);
+  justify-content: space-between;
+  gap: 6px;
+}
+.track {
+  height: 8px;
+  display: flex;
+  overflow: hidden;
+  gap: 1px;
+  border-radius: 4px;
+  background: #eef0f5;
+  margin: 7px 0 1px;
+}
+.track i {
+  height: 100%;
+  display: block;
+  background: #57aa88;
+}
+.track .bad {
+  background: #d77880;
+}
+.track .unsure {
+  background: #dbb165;
+}
+.rowbtn {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-top: 1px solid #eeedf2;
+  padding: 12px 0;
+  min-width: 0;
+}
+.rowbtn:first-child {
+  border-top: 0;
+}
+.rowcopy {
+  flex: 1;
+  min-width: 0;
+}
+.rowcopy strong,
+.rowcopy small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.rowcopy strong {
+  font-size: 0.91rem;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.rowcopy small,
+.mono,
+.filetop {
+  font-family: var(--mono);
+}
+.rowcopy small {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  background: #eeeafc;
+  color: #593fb0;
+  padding: 4px 8px;
+  font-size: 0.74rem;
+  line-height: 1.2;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge.green {
+  background: #e6f4ed;
+  color: #18714f;
+}
+.badge.red {
+  background: #fcebef;
+  color: #aa344f;
+}
+.badge.amber {
+  background: #fff3dd;
+  color: #8d560a;
+}
+.badge.gray {
+  background: #eef0f5;
+  color: #595e72;
+}
+.rowend {
+  margin-left: auto;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 15px;
+}
+.toolbar input,
+.toolbar select {
+  border: 1px solid #cccedb;
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: white;
+  color: var(--ink);
+  max-width: 100%;
+  font-size: 0.87rem;
+}
+.toolbar input {
+  min-width: min(215px, 100%);
+  flex: 1;
+}
+.chip {
+  border: 1px solid var(--rule);
+  padding: 7px 10px;
+  background: white;
+}
+.chip[aria-pressed="true"] {
+  background: #eeeafd;
+  color: #5537b8;
+  border-color: #c9baf4;
+}
+.listfoot {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 10px 0 0;
+}
+.empty {
+  padding: 18px 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.subpanel {
+  margin-top: 15px;
+}
+.summaryline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 17px;
+}
+.sourceitem {
+  padding: 13px 0;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+}
+.sourceitem p {
+  margin: 3px 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.sourceitem strong {
+  font-size: 0.95rem;
+}
+.notice,
+.loading {
+  background: #f0edfa;
+  color: #493a6c;
+  padding: 12px 15px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.panel pre,
+dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 0.83rem/1.55 var(--mono);
+  background: #f5f5f8;
+  padding: 12px;
+  border-radius: 7px;
+}
+.diff {
+  margin: 10px 0 16px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.diff div {
+  padding: 7px 10px;
+  font: 0.8rem/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+.diff .minus {
+  background: #fff0f1;
+  color: #942b42;
+}
+.diff .plus {
+  background: #e8f6ee;
+  color: #176345;
+}
+.diff .path {
+  background: #f5f5f8;
+  color: #555465;
+}
+.sourceitem .tint {
+  margin-top: 2px;
+}
+.srctext {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.benchmark {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+.benchmark th,
+.benchmark td {
+  padding: 11px 8px;
+  border-bottom: 1px solid var(--rule);
+}
+.benchmark th {
+  color: var(--muted);
+  font-weight: 550;
+  font-size: 0.78rem;
+}
+.case {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+.case .badge {
+  margin-left: auto;
+}
+.cases {
+  columns: 2;
+  column-gap: 25px;
+}
+.case {
+  break-inside: avoid;
+}
+.loading {
+  margin: 15px 0;
+}
+dialog {
+  width: min(600px, 94vw);
+  max-height: 86dvh;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  box-shadow: 0 18px 80px #18162438;
+  padding: 0;
+  color: var(--ink);
+}
+dialog::backdrop {
+  background: #19152971;
+}
+dialog header {
+  padding: 12px 19px;
+  background: #f7f7fa;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+#detail-body {
+  padding: 22px;
+}
+#detail-body h2 {
+  font-size: 1.4rem;
+  letter-spacing: -0.035em;
+  margin: 8px 0 15px;
+  overflow-wrap: anywhere;
+}
+#detail-body h3,
+.blocklabel {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: #535466;
+  margin: 18px 0 6px;
+}
+#detail-body p {
+  font-size: 0.93rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  margin: 5px 0;
+}
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+.reviewgrp {
+  margin-bottom: 16px;
+}
+.statusbox {
+  border-left: 3px solid #a78ce5;
+  padding-left: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.9rem;
+}
+.sampledocs {
+  max-height: 450px;
+  overflow: auto;
+}
+.error {
+  color: #942b42;
+}
+.menu {
+  display: none;
+}
+@media (min-width: 1600px) {
+  main {
+    padding-top: 40px;
+  }
+  .hero {
+    min-height: 224px;
+  }
+  .metric {
+    padding: 18px 21px;
+  }
+  .metrics {
+    gap: 18px;
+  }
+  .panel {
+    padding: 25px;
+  }
+}
+@media (max-width: 1130px) {
+  .shell {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+  #sidebar {
+    padding: 0 10px;
+  }
+  .grid2 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .panel {
+    padding: 16px;
+  }
+  .metrics {
+    gap: 9px;
+  }
+  .metric {
+    padding: 12px;
+  }
+  .metrictop {
+    gap: 6px;
+  }
+  .grid2 .rowbtn .tint {
+    display: none;
+  }
+}
+@media (max-width: 880px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 224px;
+    transform: translateX(-100%);
+    visibility: hidden;
+  }
+  body.navopen #sidebar {
+    transform: none;
+    visibility: visible;
+  }
+  body.navopen #scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    border: 0;
+    background: #1b1b2b70;
+    z-index: 4;
+  }
+  .menu {
+    display: inline-grid;
+    place-items: center;
+  }
+  .topbar {
+    height: 52px;
+  }
+  .grid2 .rowbtn .tint {
+    display: grid;
+  }
+  .hero {
+    min-height: 182px;
+  }
+  .brand {
+    padding-top: 20px;
+  }
+}
+@media (max-width: 640px) {
+  main {
+    padding: 19px 14px 32px;
+  }
+  .topbar {
+    padding: 0 14px;
+  }
+  .crumb {
+    gap: 6px;
+  }
+  .crumb > span:first-child {
+    display: none;
+  }
+  .repochip {
+    max-width: 42%;
+    overflow-wrap: anywhere;
+  }
+  .pagehead {
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+  .pagehead h1 {
+    font-size: 1.88rem;
+  }
+  .pagehead .btn {
+    font-size: 0.77rem;
+    padding: 8px;
+  }
+  .pagehead p {
+    font-size: 0.83rem;
+  }
+  .hero {
+    min-height: 163px;
+    padding: 17px 18px;
+  }
+  .hero p {
+    max-width: 205px;
+    font-size: 0.78rem;
+  }
+  .art {
+    transform: scale(0.69);
+    transform-origin: right center;
+    right: 3%;
+    width: 36%;
+  }
+  .score strong {
+    font-size: 3.35rem;
+  }
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 10px 0 13px;
+  }
+  .metric {
+    padding: 10px 13px;
+  }
+  .metric strong {
+    font-size: 1.55rem;
+    margin-top: 6px;
+  }
+  .grid2 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 13px;
+  }
+  .panel {
+    padding: 16px;
+  }
+  .cases {
+    columns: 1;
+  }
+  .hero h2 {
+    font-size: 1rem;
+  }
+  .hero .eyebrow {
+    font-size: 0.64rem;
+  }
+  .toolbar input {
+    flex-basis: 100%;
+  }
+  .rowbtn {
+    gap: 8px;
+  }
+  .sectionhead h2 {
+    font-size: 1rem;
+  }
+}
+@media (max-width: 390px) {
+  .crumb > span:nth-child(2),
+  .crumb i {
+    display: none;
+  }
+  .art {
+    opacity: 0.65;
+    right: 0;
+    transform: scale(0.53);
+  }
+  .repochip {
+    font-size: 0.71rem;
+  }
+  .metrictop {
+    font-size: 0.77rem;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .navitem,
+  .metric,
+  .btn,
+  .rowbtn {
+    transition: background 0.15s ease;
+  }
+  .hero .sheet {
+    animation: appear 0.4s ease-out;
+  }
+  @keyframes appear {
+    from {
+      opacity: 0.4;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
 
-        /* Setup view styles */
-        .setup-page { max-width: 1100px; margin: 0 auto; padding: 24px 32px; }
-        .setup-page h2 { font-size: 20px; font-weight: 600; margin-bottom: 16px; color: var(--gh-text); }
-        .setup-section { margin-bottom: 32px; }
-        .setup-section h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--gh-text); display: flex; align-items: center; gap: 8px; }
-        .setup-step-badge { background: var(--gh-blue); color: white; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
-        .setup-code-block {
-            background: var(--gh-bg-secondary); border: 1px solid var(--gh-border); border-radius: 6px; overflow: hidden;
-        }
-        .setup-code-header {
-            background: var(--gh-bg-tertiary); padding: 8px 16px; font-size: 13px; color: var(--gh-text-secondary);
-            border-bottom: 1px solid var(--gh-border); font-family: 'SFMono-Regular', Consolas, monospace;
-            display: flex; align-items: center; gap: 8px;
-        }
-        .setup-code-content {
-            padding: 16px; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 12px;
-            line-height: 1.7; color: var(--gh-text); overflow-x: auto; white-space: pre;
-        }
-        .yaml-key { color: #7ee787; }
-        .yaml-value { color: #a5d6ff; }
-        .yaml-comment { color: var(--gh-text-secondary); }
-        .secrets-table { width: 100%; border-collapse: collapse; border: 1px solid var(--gh-border); border-radius: 6px; overflow: hidden; }
-        .secrets-table th { background: var(--gh-bg-tertiary); padding: 10px 16px; text-align: left; font-size: 13px; color: var(--gh-text-secondary); border-bottom: 1px solid var(--gh-border); }
-        .secrets-table td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid var(--gh-border); }
-        .secrets-table tr:last-child td { border-bottom: none; }
-        .secrets-table .secret-name { color: var(--gh-blue); font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 600; }
-        .secrets-table .secret-dots { color: var(--gh-text-secondary); letter-spacing: 2px; }
-        .secrets-table .secret-status { color: var(--gh-green); font-size: 12px; display: flex; align-items: center; gap: 4px; }
-        .setup-settings-header {
-            background: var(--gh-bg-secondary); border: 1px solid var(--gh-border); border-radius: 6px 6px 0 0;
-            padding: 16px 20px; display: flex; align-items: center; gap: 12px; border-bottom: none;
-        }
-        .setup-settings-header .settings-icon { color: var(--gh-text-secondary); }
-        .setup-settings-header .settings-path { color: var(--gh-text-secondary); font-size: 14px; }
-        .setup-settings-header .settings-path span { color: var(--gh-text); font-weight: 600; }
-    </style>
+.navitem > span:not(.nbadge) {
+  white-space: nowrap;
+}
+.chip[aria-current="true"] {
+  background: #eeeafd;
+  color: #5537b8;
+  border-color: #c9baf4;
+}
+.filetop span {
+  overflow-wrap: anywhere;
+}
+.filetop b {
+  white-space: nowrap;
+}
+</style>
 </head>
 <body>
-    <div class="demo-banner">
-        <span class="demo-badge">INTERACTIVE DEMO</span>
-        <span class="demo-banner-text">Code-to-Docs: AI-Powered Documentation Updates</span>
-    </div>
-    <div class="gh-header">
-        <svg class="gh-logo" viewBox="0 0 16 16" fill="white"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        <div class="gh-header-search">Type / to search</div>
-        <div class="gh-header-nav">
-            <span>Pull requests</span>
-            <span>Issues</span>
-            <span>Marketplace</span>
-            <div class="gh-avatar-small"></div>
-        </div>
-    </div>
-
-    <div class="demo-container" id="demoContainer">
-        <!-- Setup View -->
-        <div class="view" id="setupView">
-            <div class="repo-breadcrumb">
-                <a>my-org</a><span class="separator">/</span><a>my-project</a><span class="separator">/</span><span style="color:var(--gh-text)">Settings</span>
-            </div>
-            <div class="setup-page">
-                <h2>Setting up Code-to-Docs</h2>
-
-                <div class="setup-section">
-                    <h3><span class="setup-step-badge">1</span> Add the workflow file</h3>
-                    <div class="setup-code-block">
-                        <div class="setup-code-header">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Z"/></svg>
-                            .github/workflows/docs-assistant.yml
-                        </div>
-                        <div class="setup-code-content"><span class="yaml-key">name:</span> <span class="yaml-value">Documentation Assistant</span>
-
-<span class="yaml-key">on:</span>
-  <span class="yaml-key">issue_comment:</span>
-    <span class="yaml-key">types:</span> <span class="yaml-value">[created]</span>
-
-<span class="yaml-key">permissions:</span>
-  <span class="yaml-key">contents:</span> <span class="yaml-value">read</span>
-  <span class="yaml-key">issues:</span> <span class="yaml-value">write</span>
-  <span class="yaml-key">pull-requests:</span> <span class="yaml-value">write</span>
-
-<span class="yaml-key">jobs:</span>
-  <span class="yaml-key">docs-assistant:</span>
-    <span class="yaml-key">runs-on:</span> <span class="yaml-value">ubuntu-latest</span>
-    <span class="yaml-key">if:</span> <span class="yaml-value">|
-      github.event.issue.pull_request &&
-      (contains(github.event.comment.body, '[review-docs]') ||
-       contains(github.event.comment.body, '[update-docs]'))</span>
-    <span class="yaml-key">steps:</span>
-      - <span class="yaml-key">name:</span> <span class="yaml-value">Get PR information</span>
-        <span class="yaml-key">id:</span> <span class="yaml-value">pr_info</span>
-        <span class="yaml-key">if:</span> <span class="yaml-value">github.event.issue.pull_request</span>
-        <span class="yaml-key">env:</span>
-          <span class="yaml-key">GH_TOKEN:</span> <span class="yaml-value">${{ secrets.GITHUB_TOKEN }}</span>
-        <span class="yaml-key">run:</span> <span class="yaml-value">|
-          PR_NUMBER=${{ github.event.issue.number }}
-          PR_DATA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER)
-          HEAD_REF=$(echo "$PR_DATA" | jq -r '.head.ref')
-          HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
-          BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
-          echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
-          echo "head_repo=$HEAD_REPO" >> $GITHUB_OUTPUT
-          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT</span>
-
-      - <span class="yaml-key">name:</span> <span class="yaml-value">Checkout PR Code</span>
-        <span class="yaml-key">uses:</span> <span class="yaml-value">actions/checkout@v4</span>
-        <span class="yaml-key">with:</span>
-          <span class="yaml-key">repository:</span> <span class="yaml-value">${{ steps.pr_info.outputs.head_repo || github.repository }}</span>
-          <span class="yaml-key">ref:</span> <span class="yaml-value">${{ steps.pr_info.outputs.head_ref || github.ref }}</span>
-          <span class="yaml-key">fetch-depth:</span> <span class="yaml-value">0</span>
-          <span class="yaml-key">token:</span> <span class="yaml-value">${{ secrets.GITHUB_TOKEN }}</span>
-
-      - <span class="yaml-key">name:</span> <span class="yaml-value">Documentation Assistant</span>
-        <span class="yaml-key">uses:</span> <span class="yaml-value">redhat-community-ai-tools/code-to-docs@main</span>
-        <span class="yaml-key">with:</span>
-          <span class="yaml-key">model-api-base:</span> <span class="yaml-value">${{ secrets.MODEL_API_BASE }}</span>
-          <span class="yaml-key">model-api-key:</span> <span class="yaml-value">${{ secrets.MODEL_API_KEY }}</span>
-          <span class="yaml-key">model-name:</span> <span class="yaml-value">${{ secrets.MODEL_NAME }}</span>
-          <span class="yaml-key">docs-repo-url:</span> <span class="yaml-value">${{ secrets.DOCS_REPO_URL }}</span>
-          <span class="yaml-key">github-token:</span> <span class="yaml-value">${{ secrets.GITHUB_TOKEN }}</span>
-          <span class="yaml-key">pr-number:</span> <span class="yaml-value">${{ github.event.issue.number }}</span>
-          <span class="yaml-key">pr-base:</span> <span class="yaml-value">origin/${{ steps.pr_info.outputs.base_ref || 'main' }}</span>
-          <span class="yaml-key">pr-head-sha:</span> <span class="yaml-value">${{ steps.pr_info.outputs.head_ref }}</span>
-          <span class="yaml-key">docs-subfolder:</span> <span class="yaml-value">${{ secrets.DOCS_SUBFOLDER }}</span>
-          <span class="yaml-key">comment-body:</span> <span class="yaml-value">${{ github.event.comment.body }}</span>
-          <span class="yaml-key">docs-base-branch:</span> <span class="yaml-value">${{ secrets.DOCS_BASE_BRANCH || 'main' }}</span></div>
-                    </div>
-                </div>
-
-                <div class="setup-section">
-                    <h3><span class="setup-step-badge">2</span> Configure repository secrets</h3>
-                    <div class="setup-settings-header">
-                        <span class="settings-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.3.071l1.102-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294a6.7 6.7 0 0 1 0 .772c-.01.147.04.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.2 7.2 0 0 1-.704 1.218c-.428.609-1.176.806-1.82.63l-1.103-.303c-.066-.019-.176-.011-.299.071a5.3 5.3 0 0 1-.668.386c-.133.066-.194.158-.212.224l-.288 1.107c-.17.645-.716 1.195-1.459 1.26a8.1 8.1 0 0 1-1.402 0c-.743-.065-1.289-.615-1.459-1.26l-.289-1.107c-.017-.066-.078-.158-.211-.224a5.3 5.3 0 0 1-.668-.386c-.123-.082-.233-.09-.3-.071l-1.102.303c-.644.176-1.392-.021-1.82-.63a7.1 7.1 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.049-.048.098-.147.088-.294a6.7 6.7 0 0 1 0-.772c.01-.147-.04-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.1 7.1 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.103.303c.066.018.176.01.299-.072.214-.143.437-.272.668-.386.133-.066.194-.158.212-.224L5.84 1.29c.17-.645.716-1.195 1.459-1.26A8.2 8.2 0 0 1 8 0Z"/></svg></span>
-                        <span class="settings-path">Settings &gt; Secrets and variables &gt; <span>Actions</span></span>
-                    </div>
-                    <table class="secrets-table">
-                        <thead>
-                            <tr><th>Name</th><th>Value</th><th>Description</th></tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><span class="secret-name">MODEL_API_BASE</span></td>
-                                <td><span class="secret-dots">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</span></td>
-                                <td>Base URL for OpenAI-compatible API (e.g., vLLM, Gemini, OpenAI)</td>
-                            </tr>
-                            <tr>
-                                <td><span class="secret-name">MODEL_API_KEY</span></td>
-                                <td><span class="secret-dots">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</span></td>
-                                <td>API key for the model endpoint (optional if no auth required)</td>
-                            </tr>
-                            <tr>
-                                <td><span class="secret-name">MODEL_NAME</span></td>
-                                <td><span class="secret-dots">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</span></td>
-                                <td>Model name to use for inference</td>
-                            </tr>
-                            <tr>
-                                <td><span class="secret-name">DOCS_REPO_URL</span></td>
-                                <td><span class="secret-dots">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</span></td>
-                                <td>Docs repository URL (e.g., https://github.com/org/docs)</td>
-                            </tr>
-                            <tr>
-                                <td><span class="secret-name">GITHUB_TOKEN</span></td>
-                                <td style="color:var(--gh-text-secondary);font-style:italic;font-size:12px;">Built-in</td>
-                                <td>Built-in GitHub Actions token (no setup needed for same-repo)</td>
-                            </tr>
-                            <tr>
-                                <td><span class="secret-name">DOCS_SUBFOLDER</span></td>
-                                <td style="color:var(--gh-text-secondary);font-style:italic;font-size:12px;">Optional</td>
-                                <td>Docs subfolder path if docs live in the same repo (e.g., docs)</td>
-                            </tr>
-                            <tr>
-                                <td><span class="secret-name">DOCS_BASE_BRANCH</span></td>
-                                <td style="color:var(--gh-text-secondary);font-style:italic;font-size:12px;">Optional</td>
-                                <td>Base branch for docs PRs (defaults to main)</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Generated Docs View -->
-        <div class="view" id="docsView" style="display:none;">
-            <div class="repo-breadcrumb">
-                <a>my-org</a><span class="separator">/</span><a>my-project-docs</a><span class="separator">/</span><span style="color:var(--gh-text)">PR #89</span>
-            </div>
-            <div class="pr-page">
-                <div class="pr-title-section">
-                    <h1 class="pr-title">Auto-Generated Doc Updates from Code PR <span class="pr-number">#89</span></h1>
-                    <div class="pr-status">
-                        <span class="pr-status-badge open">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
-                            Open
-                        </span>
-                        <span class="pr-meta">
-                            <strong>github-actions</strong> wants to merge 1 commit into <code>main</code> from <code>doc-update-from-pr</code>
-                        </span>
-                    </div>
-                </div>
-
-                <div class="docs-file-tabs">
-                    <div class="docs-file-tab active" onclick="switchDocsTab('auth')">docs/api/authentication.md</div>
-                    <div class="docs-file-tab" onclick="switchDocsTab('config')">docs/configuration.md</div>
-                </div>
-
-                <div id="docsTabAuth">
-                    <div class="docs-before-after">
-                        <div class="docs-panel">
-                            <div class="docs-panel-header before">Before</div>
-                            <div class="docs-panel-content"><span class="doc-heading">## Authentication Endpoints</span>
-
-<span class="doc-heading">### POST /auth/login</span>
-
-Authenticates a user with email and password.
-
-**Request Body:**
-```json
-{
-  "email": "user@example.com",
-  "password": "secret"
-}
-```
-
-**Response:** `200 OK` with JWT token.
-
-<span class="doc-heading">### POST /auth/token</span>
-
-Refreshes an expired JWT token.
-
-**Response:** `200 OK` with new token.</div>
-                        </div>
-                        <div class="docs-panel">
-                            <div class="docs-panel-header after">After (AI-generated)</div>
-                            <div class="docs-panel-content"><span class="doc-heading">## Authentication Endpoints</span>
-
-<span class="doc-heading">### POST /auth/login</span>
-
-Authenticates a user with email and password.
-
-**Request Body:**
-```json
-{
-  "email": "user@example.com",
-  "password": "secret"
-}
-```
-
-**Response:** `200 OK` with JWT token.
-<span class="doc-added">
-<span class="doc-heading">#### Rate Limiting</span></span><span class="doc-added">
-This endpoint is rate-limited. Exceeding the limit</span><span class="doc-added">returns `429 Too Many Requests` with a `Retry-After`</span><span class="doc-added">header indicating when the next request is allowed.</span><span class="doc-added">
-Default: 100 requests per 60-second window.</span>
-
-<span class="doc-heading">### POST /auth/token</span>
-
-Refreshes an expired JWT token.
-
-**Response:** `200 OK` with new token.
-<span class="doc-added">
-<span class="doc-heading">#### Rate Limiting</span></span><span class="doc-added">
-This endpoint shares the same rate limiting policy</span><span class="doc-added">as `/auth/login`. See above for details.</span></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="docsTabConfig" style="display:none;">
-                    <div class="docs-before-after">
-                        <div class="docs-panel">
-                            <div class="docs-panel-header before">Before</div>
-                            <div class="docs-panel-content"><span class="doc-heading">## Configuration Reference</span>
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8080` | Server port |
-| `LOG_LEVEL` | `info` | Logging level |
-| `SESSION_TIMEOUT` | `3600` | Session timeout in seconds |
-| `DB_CONNECTION` | — | Database connection string |</div>
-                        </div>
-                        <div class="docs-panel">
-                            <div class="docs-panel-header after">After (AI-generated)</div>
-                            <div class="docs-panel-content"><span class="doc-heading">## Configuration Reference</span>
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8080` | Server port |
-| `LOG_LEVEL` | `info` | Logging level |
-| `SESSION_TIMEOUT` | `3600` | Session timeout in seconds |
-| `DB_CONNECTION` | — | Database connection string |
-<span class="doc-added">| `RATE_LIMIT_MAX_REQUESTS` | `100` | Max requests per window |</span><span class="doc-added">| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate limit window in seconds |</span></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- PR View -->
-        <div class="view" id="prView">
-            <div class="repo-breadcrumb">
-                <a>my-org</a><span class="separator">/</span><a>my-project</a>
-            </div>
-            <div class="pr-page">
-                <div class="pr-title-section">
-                    <h1 class="pr-title">Add rate limiting to authentication endpoints <span class="pr-number">#342</span></h1>
-                    <div class="pr-status">
-                        <span class="pr-status-badge open">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
-                            Open
-                        </span>
-                        <span class="pr-meta">
-                            <strong>alice</strong> wants to merge 3 commits into <code>main</code> from <code>add-rate-limiting</code>
-                        </span>
-                    </div>
-                </div>
-
-                <div class="pr-tabs">
-                    <div class="pr-tab active" id="tabConversation" onclick="switchTab('conversation')">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 1h8.5c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 10.25 10H7.061l-2.574 2.573A1.458 1.458 0 0 1 2 11.543V10h-.25A1.75 1.75 0 0 1 0 8.25v-5.5C0 1.784.784 1 1.75 1Z"/></svg>
-                        Conversation <span class="tab-count" id="commentCount">2</span>
-                    </div>
-                    <div class="pr-tab" id="tabFiles">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg>
-                        Files changed <span class="tab-count">3</span>
-                    </div>
-                </div>
-
-                <div id="conversationContent">
-                    <div class="comment">
-                        <div class="comment-avatar avatar-user"></div>
-                        <div class="comment-body">
-                            <div class="comment-header">
-                                <strong>alice</strong>
-                                <span class="comment-time">commented 2 hours ago</span>
-                            </div>
-                            <div class="comment-content">
-                                <p>This PR adds rate limiting to the <code>/auth/login</code> and <code>/auth/token</code> endpoints. Changes include:</p>
-                                <ul>
-                                    <li>New <code>RateLimiter</code> middleware with configurable limits per endpoint</li>
-                                    <li>Updated <code>auth_handler.py</code> to apply rate limiting on login and token refresh</li>
-                                    <li>New configuration options: <code>RATE_LIMIT_MAX_REQUESTS</code> and <code>RATE_LIMIT_WINDOW_SECONDS</code></li>
-                                    <li>Tests for rate limiting behavior and error responses</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Diff file 1 -->
-                    <div class="diff-file">
-                        <div class="diff-file-header">
-                            <span class="file-icon">&#9660;</span>
-                            src/middleware/rate_limiter.py
-                            <span style="margin-left: auto; color: var(--gh-green);">+94</span>
-                            <span style="color: var(--gh-red);">-0</span>
-                        </div>
-                        <table class="diff-table">
-                            <tr class="diff-hunk"><td class="diff-line-num"></td><td class="diff-line-num"></td><td class="diff-line-content">@@ -0,0 +1,34 @@</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">1</td><td class="diff-line-content">+class RateLimiter:</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">2</td><td class="diff-line-content">+    """Sliding window rate limiter middleware."""</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">3</td><td class="diff-line-content">+</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">4</td><td class="diff-line-content">+    def __init__(self, max_requests, window_seconds):</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">5</td><td class="diff-line-content">+        self.max_requests = max_requests</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">6</td><td class="diff-line-content">+        self.window_seconds = window_seconds</td></tr>
-                        </table>
-                    </div>
-
-                    <!-- Diff file 2 -->
-                    <div class="diff-file">
-                        <div class="diff-file-header">
-                            <span class="file-icon">&#9660;</span>
-                            src/handlers/auth_handler.py
-                            <span style="margin-left: auto; color: var(--gh-green);">+23</span>
-                            <span style="color: var(--gh-red);">-4</span>
-                        </div>
-                        <table class="diff-table">
-                            <tr class="diff-hunk"><td class="diff-line-num"></td><td class="diff-line-num"></td><td class="diff-line-content">@@ -12,8 +12,18 @@ class AuthHandler:</td></tr>
-                            <tr><td class="diff-line-num">12</td><td class="diff-line-num">12</td><td class="diff-line-content">  def handle_login(self, request):</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">13</td><td class="diff-line-content">+     self.rate_limiter.check(request)</td></tr>
-                            <tr><td class="diff-line-num">13</td><td class="diff-line-num">14</td><td class="diff-line-content">      credentials = request.get_credentials()</td></tr>
-                            <tr class="diff-line-del"><td class="diff-line-num">14</td><td class="diff-line-num"></td><td class="diff-line-content">-     return self.authenticate(credentials)</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">15</td><td class="diff-line-content">+     return self.authenticate(credentials, rate_limited=True)</td></tr>
-                        </table>
-                    </div>
-
-                    <!-- Diff file 3 -->
-                    <div class="diff-file">
-                        <div class="diff-file-header">
-                            <span class="file-icon">&#9660;</span>
-                            config/settings.py
-                            <span style="margin-left: auto; color: var(--gh-green);">+12</span>
-                            <span style="color: var(--gh-red);">-0</span>
-                        </div>
-                        <table class="diff-table">
-                            <tr class="diff-hunk"><td class="diff-line-num"></td><td class="diff-line-num"></td><td class="diff-line-content">@@ -28,6 +28,14 @@ class Settings:</td></tr>
-                            <tr><td class="diff-line-num">28</td><td class="diff-line-num">28</td><td class="diff-line-content">  SESSION_TIMEOUT = 3600</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">29</td><td class="diff-line-content">+</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">30</td><td class="diff-line-content">+  # Rate limiting</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">31</td><td class="diff-line-content">+  RATE_LIMIT_MAX_REQUESTS = 100</td></tr>
-                            <tr class="diff-line-add"><td class="diff-line-num"></td><td class="diff-line-num">32</td><td class="diff-line-content">+  RATE_LIMIT_WINDOW_SECONDS = 60</td></tr>
-                        </table>
-                    </div>
-
-                    <div id="commentsArea"></div>
-
-                    <div class="comment-input-area" id="commentInputArea">
-                        <div class="comment-avatar avatar-user" style="width:40px;height:40px;border-radius:50%;flex-shrink:0;"></div>
-                        <div class="comment-input-box">
-                            <div class="comment-input-tabs">
-                                <span class="comment-input-tab active">Write</span>
-                                <span class="comment-input-tab">Preview</span>
-                            </div>
-                            <textarea class="comment-textarea" id="commentTextarea" placeholder="Leave a comment"></textarea>
-                            <div class="comment-input-footer">
-                                <button class="btn-comment" id="btnComment" disabled>Comment</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="filesContent" style="display:none;">
-                    <div class="diff-file"><div class="diff-file-header"><span class="file-icon">&#9660;</span> src/middleware/rate_limiter.py <span style="margin-left:auto;color:var(--gh-green);">+94</span> <span style="color:var(--gh-red);">-0</span></div></div>
-                    <div class="diff-file"><div class="diff-file-header"><span class="file-icon">&#9660;</span> src/handlers/auth_handler.py <span style="margin-left:auto;color:var(--gh-green);">+23</span> <span style="color:var(--gh-red);">-4</span></div></div>
-                    <div class="diff-file"><div class="diff-file-header"><span class="file-icon">&#9660;</span> config/settings.py <span style="margin-left:auto;color:var(--gh-green);">+12</span> <span style="color:var(--gh-red);">-0</span></div></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="narration-box position-center" id="narrationBox">
-        <div class="step-indicator" id="stepIndicator"></div>
-        <h4 id="narrationTitle"></h4>
-        <p id="narrationText"></p>
-        <div class="narration-buttons">
-            <button class="btn-back" id="btnBack" onclick="prevStep()">&#8592; Back</button>
-            <button class="btn-next" id="btnNext" onclick="nextStep()">Start Demo &#8594;</button>
-        </div>
-    </div>
-
-    <script>
-        let demoStep = 0;
-        let animationTimer = null;
-
-        const actionAvatarSvg = '<svg viewBox="0 0 16 16" fill="#8b949e" width="20" height="20"><path d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.3.071l1.102-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294a6.7 6.7 0 0 1 0 .772c-.01.147.04.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.2 7.2 0 0 1-.704 1.218c-.428.609-1.176.806-1.82.63l-1.103-.303c-.066-.019-.176-.011-.299.071a5.3 5.3 0 0 1-.668.386c-.133.066-.194.158-.212.224l-.288 1.107c-.17.645-.716 1.195-1.459 1.26a8.1 8.1 0 0 1-1.402 0c-.743-.065-1.289-.615-1.459-1.26l-.289-1.107c-.017-.066-.078-.158-.211-.224a5.3 5.3 0 0 1-.668-.386c-.123-.082-.233-.09-.3-.071l-1.102.303c-.644.176-1.392-.021-1.82-.63a7.1 7.1 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.049-.048.098-.147.088-.294a6.7 6.7 0 0 1 0-.772c.01-.147-.04-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.1 7.1 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.103.303c.066.018.176.01.299-.072.214-.143.437-.272.668-.386.133-.066.194-.158.212-.224L5.84 1.29c.17-.645.716-1.195 1.459-1.26A8.2 8.2 0 0 1 8 0M5.919 10.5a3.5 3.5 0 1 0 4.162-4.162 3.5 3.5 0 0 0-4.162 4.163Z"/></svg>';
-
-        const demoSteps = [
-            {
-                title: "Code-to-Docs: AI Documentation Updates",
-                text: "See how Code-to-Docs automatically identifies and updates documentation when code changes \u2014 right from your pull request workflow.",
-                buttonText: "Start Demo &#8594;",
-                position: "center",
-                action: null
-            },
-            {
-                title: "Step 1: Set Up the GitHub Action",
-                text: "Setting up Code-to-Docs takes two steps: add a workflow file to your repository and configure your secrets (model endpoint, API key, model name, docs repo URL, and GitHub token). That's it \u2014 the action is ready to use.",
-                buttonText: "Continue &#8594;",
-                position: "bottom-right",
-                action: "showSetup"
-            },
-            {
-                title: "Step 2: A Developer Opens a Pull Request",
-                text: "A contributor has opened a PR that adds rate limiting to the authentication endpoints. The PR modifies several source files \u2014 but what about the documentation?",
-                buttonText: "Continue &#8594;",
-                position: "top-right",
-                action: "showPR"
-            },
-            {
-                title: "Step 3: Comment [review-docs]",
-                text: "Someone types <code>[review-docs]</code> as a PR comment. This triggers the Code-to-Docs GitHub Action, which analyzes the code diff against the project's documentation, uses its semantic index to find relevant files, and identifies which ones need updating and what changes are needed.",
-                buttonText: "Continue &#8594;",
-                position: "bottom-right",
-                action: "runReviewSequence"
-            },
-            {
-                title: "Step 4: Curate the Suggestions",
-                text: "The reviewer unchecks <code>docs/deployment.md</code> \u2014 it mentions authentication but doesn't need updating for this change. The checked files will be updated in the next step.",
-                buttonText: "Continue &#8594;",
-                position: "top-right",
-                action: "curateFiles"
-            },
-            {
-                title: "Step 5: Comment [update-docs] with Instructions",
-                text: "The reviewer comments <code>[update-docs]</code> with instructions \u2014 global on the first line, per-file on the lines that follow. The action generates updates only for the checked files and creates a PR in the docs repository.",
-                buttonText: "Continue &#8594;",
-                position: "bottom-right",
-                action: "runUpdateSequence"
-            },
-            {
-                title: "Step 6: The Generated Documentation",
-                text: "Here's what the AI-generated documentation looks like. The action added a rate limiting section to the API docs and new configuration options to the config reference \u2014 matching the project's existing style and conventions.",
-                buttonText: "Continue &#8594;",
-                position: "top-right",
-                action: "showGeneratedDocs"
-            },
-            {
-                title: "Ready to Try Code-to-Docs?",
-                text: "Set up the GitHub Action in your repository and comment <code>[review-docs]</code> on your next pull request. Your documentation will thank you.",
-                buttonText: "&#8634; Restart Demo",
-                position: "center",
-                action: "showCTA"
-            }
-        ];
-
-        function buildStepIndicator() {
-            const container = document.getElementById('stepIndicator');
-            container.innerHTML = '';
-            for (let i = 0; i < demoSteps.length; i++) {
-                const dot = document.createElement('div');
-                dot.className = 'step-dot';
-                if (i < demoStep) dot.classList.add('completed');
-                if (i === demoStep) dot.classList.add('active');
-                container.appendChild(dot);
-            }
-        }
-
-        function updateNarration() {
-            const step = demoSteps[demoStep];
-            document.getElementById('narrationTitle').textContent = step.title;
-            document.getElementById('narrationText').innerHTML = step.text;
-            document.getElementById('btnNext').innerHTML = step.buttonText;
-            document.getElementById('btnBack').disabled = demoStep === 0;
-            const box = document.getElementById('narrationBox');
-            box.classList.remove('position-center', 'position-bottom-right', 'position-top-right', 'position-top-left');
-            box.classList.add('position-' + step.position.replace(' ', '-'));
-            buildStepIndicator();
-        }
-
-        function nextStep() {
-            if (demoStep === demoSteps.length - 1) { resetDemo(); return; }
-            demoStep++;
-            updateNarration();
-            const action = demoSteps[demoStep].action;
-            if (action && typeof window[action] === 'function') window[action]();
-        }
-
-        function prevStep() {
-            if (demoStep <= 0) return;
-            if (animationTimer) { clearTimeout(animationTimer); animationTimer = null; }
-            demoStep--;
-            updateNarration();
-            resetView();
-            for (let i = 1; i <= demoStep; i++) {
-                const action = demoSteps[i].action;
-                if (action && typeof window[action] === 'function') window[action](true);
-            }
-        }
-
-        function resetDemo() { demoStep = 0; resetView(); updateNarration(); }
-
-        function resetView() {
-            document.getElementById('commentsArea').innerHTML = '';
-            document.getElementById('commentTextarea').value = '';
-            document.getElementById('btnComment').disabled = true;
-            switchTab('conversation');
-            document.getElementById('commentCount').textContent = '2';
-            document.getElementById('demoContainer').scrollTop = 0;
-            hideAllViews();
-        }
-
-        function hideAllViews() {
-            document.getElementById('setupView').style.display = 'none';
-            document.getElementById('prView').style.display = 'none';
-            document.getElementById('docsView').style.display = 'none';
-        }
-
-        function switchTab(tab) {
-            const convTab = document.getElementById('tabConversation');
-            const filesTab = document.getElementById('tabFiles');
-            document.getElementById('conversationContent').style.display = tab === 'conversation' ? 'block' : 'none';
-            document.getElementById('filesContent').style.display = tab === 'conversation' ? 'none' : 'block';
-            convTab.classList.toggle('active', tab === 'conversation');
-            filesTab.classList.toggle('active', tab !== 'conversation');
-        }
-
-        function scrollToBottom() {
-            setTimeout(() => {
-                const c = document.getElementById('demoContainer');
-                c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' });
-            }, 100);
-        }
-
-        function incrementCommentCount() {
-            const el = document.getElementById('commentCount');
-            el.textContent = parseInt(el.textContent) + 1;
-        }
-
-        function addUserComment(text, instant) {
-            const area = document.getElementById('commentsArea');
-            const escapedText = text.replace(/"/g, '&quot;');
-            if (area.querySelector(`[data-comment-text="${CSS.escape(text)}"]`)) return;
-            const displayText = text.includes('\n')
-                ? text.split('\n').map(l => `<code>${l}</code>`).join('<br>')
-                : `<code>${text}</code>`;
-            area.insertAdjacentHTML('beforeend', `
-                <div class="comment" data-comment-text="${escapedText}">
-                    <div class="comment-avatar avatar-user"></div>
-                    <div class="comment-body">
-                        <div class="comment-header"><strong>reviewer</strong> <span class="comment-time">commented just now</span></div>
-                        <div class="comment-content"><p>${displayText}</p></div>
-                    </div>
-                </div>`);
-            incrementCommentCount();
-            scrollToBottom();
-        }
-
-        function addActionComment(id, content) {
-            const area = document.getElementById('commentsArea');
-            if (area.querySelector('.' + id)) return;
-            area.insertAdjacentHTML('beforeend', `
-                <div class="comment ${id}">
-                    <div class="comment-avatar avatar-action">${actionAvatarSvg}</div>
-                    <div class="comment-body">
-                        <div class="comment-header"><strong>github-actions</strong> <span class="comment-time">commented just now</span></div>
-                        <div class="comment-content">${content}</div>
-                    </div>
-                </div>`);
-            incrementCommentCount();
-            scrollToBottom();
-        }
-
-        // --- Action functions ---
-
-        function showSetup(instant) {
-            hideAllViews();
-            document.getElementById('setupView').style.display = 'block';
-            document.getElementById('demoContainer').scrollTop = 0;
-        }
-
-        function showPR(instant) {
-            hideAllViews();
-            document.getElementById('prView').style.display = 'block';
-            switchTab('conversation');
-            document.getElementById('demoContainer').scrollTop = 0;
-        }
-
-        // Step 2: type [review-docs], show analyzing, then show review comment — all in one click
-        function runReviewSequence(instant) {
-            if (instant) {
-                addUserComment('[review-docs]', true);
-                showReviewComment();
-                return;
-            }
-            const textarea = document.getElementById('commentTextarea');
-            const btn = document.getElementById('btnComment');
-            const text = '[review-docs]';
-            textarea.value = ''; textarea.focus();
-            let i = 0;
-            const typing = setInterval(() => {
-                textarea.value += text[i]; i++;
-                if (i >= text.length) {
-                    clearInterval(typing);
-                    btn.disabled = false;
-                    // Post comment
-                    animationTimer = setTimeout(() => {
-                        addUserComment(text);
-                        textarea.value = ''; btn.disabled = true;
-                        // Show analyzing timeline
-                        const area = document.getElementById('commentsArea');
-                        area.insertAdjacentHTML('beforeend', `
-                            <div class="timeline-line analyzing-comment">
-                                <div class="timeline-dot"></div>
-                                <span class="timeline-text"><strong>Documentation Assistant</strong> (GitHub Action) started analyzing changes...</span>
-                            </div>
-                            <div class="comment" id="typingComment">
-                                <div class="comment-avatar avatar-action">${actionAvatarSvg}</div>
-                                <div class="comment-body">
-                                    <div class="comment-header"><strong>github-actions</strong> <span class="comment-time">analyzing changes...</span></div>
-                                    <div class="comment-content"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>
-                                </div>
-                            </div>`);
-                        scrollToBottom();
-                        // Show review comment after delay
-                        animationTimer = setTimeout(() => {
-                            const t = document.getElementById('typingComment');
-                            if (t) t.remove();
-                            showReviewComment();
-                        }, 2000);
-                    }, 500);
-                }
-            }, 80);
-        }
-
-        function showReviewComment() {
-            addActionComment('review-comment', `
-                <h3>Documentation Review</h3>
-                <p>I analyzed your code changes and found <strong>3 documentation files</strong> that may need updating:</p>
-                <div class="doc-checkbox" id="check1">
-                    <input type="checkbox" id="file1" checked>
-                    <label for="file1">
-                        <span class="filename">docs/api/authentication.md</span>
-                        <span class="file-description">This file documents the authentication API endpoints including <code>/auth/login</code> and <code>/auth/token</code>, covering request formats, response codes, and usage examples.</span>
-                        <span class="file-suggestion">Suggested update: Add documentation for the new rate limiting behavior on these endpoints, including the 429 response code and <code>Retry-After</code> header.</span>
-                    </label>
-                </div>
-                <div class="doc-checkbox" id="check2">
-                    <input type="checkbox" id="file2" checked>
-                    <label for="file2">
-                        <span class="filename">docs/configuration.md</span>
-                        <span class="file-description">This file is the configuration reference for the project. It lists all environment variables and configuration options with their defaults and descriptions.</span>
-                        <span class="file-suggestion">Suggested update: Add the new <code>RATE_LIMIT_MAX_REQUESTS</code> and <code>RATE_LIMIT_WINDOW_SECONDS</code> configuration options to the table.</span>
-                    </label>
-                </div>
-                <div class="doc-checkbox" id="check3">
-                    <input type="checkbox" id="file3" checked>
-                    <label for="file3">
-                        <span class="filename">docs/deployment.md</span>
-                        <span class="file-description">This file covers deploying the application in production, including proxy settings, TLS configuration, and authentication setup for different environments.</span>
-                        <span class="file-suggestion">Suggested update: The authentication setup section briefly mentions endpoint behavior, but the change is minor and may not require an update.</span>
-                    </label>
-                </div>
-                <div class="collapsible-section">
-                    <div class="collapsible-header" onclick="this.nextElementSibling.classList.toggle('open')">&#9654; Proposed changes preview</div>
-                    <div class="collapsible-body"><strong>docs/api/authentication.md</strong>
-Add a "Rate Limiting" section under each endpoint
-documenting the sliding window rate limit behavior.
-Include the 429 Too Many Requests response, the
-Retry-After header, and example error response body.
-
-<strong>docs/configuration.md</strong>
-Add two rows to the configuration table:
-  RATE_LIMIT_MAX_REQUESTS (default: 100)
-  RATE_LIMIT_WINDOW_SECONDS (default: 60)
-
-<strong>docs/deployment.md</strong>
-The authentication setup section references endpoint
-behavior but does not specifically describe rate limits.
-Changes may not be necessary.</div>
-                </div>
-                <p style="margin-top:12px;color:var(--gh-text-secondary);font-size:13px;">&#9989; Uncheck any files you don't want updated, then comment <code>[update-docs]</code> to create a docs PR.</p>`);
-        }
-
-        function curateFiles(instant) {
-            const check3 = document.getElementById('check3');
-            const file3 = document.getElementById('file3');
-            if (!instant) {
-                setTimeout(() => {
-                    file3.checked = false;
-                    check3.classList.add('unchecked-file', 'highlight-flash');
-                }, 400);
-            } else {
-                file3.checked = false;
-                check3.classList.add('unchecked-file');
-            }
-            scrollToBottom();
-        }
-
-        // Step 4: type [update-docs], then show docs PR — all in one click
-        function runUpdateSequence(instant) {
-            const text = '[update-docs] keep changes minimal\nconfiguration.md: only add the new config options to the table';
-            if (instant) {
-                addUserComment(text, true);
-                showDocsPR();
-                return;
-            }
-            const textarea = document.getElementById('commentTextarea');
-            const btn = document.getElementById('btnComment');
-            textarea.value = ''; textarea.focus();
-            let i = 0;
-            const typing = setInterval(() => {
-                textarea.value += text[i]; i++;
-                if (i >= text.length) {
-                    clearInterval(typing);
-                    btn.disabled = false;
-                    animationTimer = setTimeout(() => {
-                        addUserComment(text);
-                        textarea.value = ''; btn.disabled = true;
-                        // Show timeline + docs PR after short delay
-                        animationTimer = setTimeout(() => {
-                            showDocsPR();
-                        }, 1200);
-                    }, 500);
-                }
-            }, 40);
-        }
-
-        function showDocsPR() {
-            const area = document.getElementById('commentsArea');
-            if (area.querySelector('.docs-pr-comment')) return;
-            area.insertAdjacentHTML('beforeend', `
-                <div class="timeline-line">
-                    <div class="timeline-dot"></div>
-                    <span class="timeline-text"><strong>Documentation Assistant</strong> (GitHub Action) created a pull request in <a>my-org/my-project-docs</a></span>
-                </div>`);
-            addActionComment('docs-pr-comment', `
-                <div class="success-banner"><span class="success-icon">&#10003;</span><span>Documentation PR created successfully!</span></div>
-                <p>Updated <strong>2 documentation files</strong> based on your review:</p>
-                <ul>
-                    <li><code>docs/api/authentication.md</code> &#8212; Added rate limiting section with 429 response documentation</li>
-                    <li><code>docs/configuration.md</code> &#8212; Added RATE_LIMIT_MAX_REQUESTS and RATE_LIMIT_WINDOW_SECONDS to configuration table</li>
-                </ul>
-                <a class="docs-pr-link" href="#">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
-                    my-org/my-project-docs#89: Auto-Generated Doc Updates from Code PR
-                </a>
-                <p style="margin-top:12px;color:var(--gh-text-secondary);font-size:13px;">1 file was skipped (unchecked): <code>docs/deployment.md</code></p>`);
-        }
-
-        function showGeneratedDocs(instant) {
-            hideAllViews();
-            document.getElementById('docsView').style.display = 'block';
-            document.getElementById('demoContainer').scrollTop = 0;
-        }
-
-        function switchDocsTab(tab) {
-            document.getElementById('docsTabAuth').style.display = tab === 'auth' ? 'block' : 'none';
-            document.getElementById('docsTabConfig').style.display = tab === 'config' ? 'block' : 'none';
-            document.querySelectorAll('.docs-file-tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-        }
-
-        function showCTA() {}
-
-        updateNarration();
-    </script>
-</body>
-</html>
+<a class="skip" href="#content">Skip to dashboard</a>
+<div class="shell">
+<aside id="sidebar" aria-label="Workspace sidebar">
+  <div class="brand"><span class="brandmark" data-icon="layers"></span><b>Doc Check</b></div>
+  <nav aria-label="Dashboard navigation" id="nav"></nav>
+  <div class="sidefoot"><span class="footmark" data-icon="terminal"></span><div><b id="side-mode">Local workspace</b><small>Documentation intelligence</small></div></div>
+</aside>
+<div class="maincol">
+<header class="topbar"><button class="iconbtn menu" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar" id="menutoggle" data-icon="menu"></button>
+<div class="crumb"><span data-icon="panel"></span><span>Workspace</span><i>/</i><b id="crumb">Overview</b></div>
+<div class="repochip"><span data-icon="repo"></span><span id="repo">Repository</span></div></header>
+<main id="content" tabindex="-1"><div class="loading" role="status">Loading the repository audit…</div></main>
+</div></div>
+<button id="scrim" aria-label="Close navigation" hidden></button>
+<dialog id="detail" aria-labelledby="detail-type"><header><span id="detail-type">Evidence</span><button id="close-detail" class="iconbtn" aria-label="Close details" data-icon="close"></button></header><div id="detail-body"></div></dialog>
+<div class="sr" aria-live="polite" id="announce"></div>
+<script type="application/json" id="snapshot">{"project": "shop-demo", "demo": true, "health": {"score": 55.7, "verified": 24, "contradicted": 19, "uncertain": 1, "files": {"docs/api.md": {"score": 60.9, "verified": 14, "contradicted": 9, "uncertain": 0}, "docs/operations.md": {"score": 50.0, "verified": 4, "contradicted": 4, "uncertain": 0}, "docs/setup.md": {"score": 50.0, "verified": 6, "contradicted": 6, "uncertain": 1}}}, "findings": [{"verdict": "verified", "check": "endpoint", "claim": "GET /users", "file": "docs/api.md", "line": 5, "message": "`GET /users` exists in the spec.", "evidence": "routes in shop-demo#/paths/~1users/get", "fix": "", "ai_fix": ""}, {"verdict": "verified", "check": "parameter", "claim": "GET /users", "file": "docs/api.md", "line": 5, "message": "Parameter `limit` (query) matches the spec.", "evidence": "routes in shop-demo#/paths/~1users/get/parameters/0", "fix": "", "ai_fix": ""}, {"verdict": "contradicted", "check": "parameter", "claim": "GET /users", "file": "docs/api.md", "line": 5, "message": "Parameter `offset` is documented but not in the spec for `GET /users`. Spec parameters: `limit`, `search`.", "evidence": "routes in shop-demo#/paths/~1users/get", "fix": "Remove `offset` from the docs, or add it to the API if it should exist.", "ai_fix": ""}, {"verdict": "verified", "check": "parameter", "claim": "GET /users", "file": "docs/api.md", "line": 5, "message": "Parameter `search` (query) matches the spec.", "evidence": "routes in shop-demo#/paths/~1users/get/parameters/1", "fix": "", "ai_fix": ""}, {"verdict": "verified", "check": "endpoint", "claim": "POST /users", "file": "docs/api.md", "line": 15, "message": "`POST /users` exists in the spec.", "evidence": "routes in shop-demo#/paths/~1users/post", "fix": "", "ai_fix": ""}, {"verdict": "contradicted", "check": "parameter", "claim": "POST /users", "file": "docs/api.md", "line": 15, "message": "Parameter `email`: docs say optional, spec says required.", "evidence": "routes in shop-demo#/paths/~1users/post/requestBody/properties/email", "fix": "Mark `email` as required.", "ai_fix": ""}, {"verdict": "verified", "check": "parameter", "claim": "POST /users", "file": "docs/api.md", "line": 15, "message": "Parameter `name` (body) matches the spec.", "evidence": "routes in shop-demo#/paths/~1users/post/requestBody/properties/name", "fix": "", "ai_fix": ""}, {"verdict": "contradicted", "check": "parameter", "claim": "POST /users", "file": "docs/api.md", "line": 15, "message": "Parameter `age`: docs say type `string`, spec says `integer`.", "evidence": "routes in shop-demo#/paths/~1users/post/requestBody/properties/age", "fix": "Change the type of `age` to `integer`.", "ai_fix": ""}, {"verdict": "verified", "check": "response", "claim": "POST /users", "file": "docs/api.md", "line": 15, "message": "Response `201` is defined in the spec.", "evidence": "routes in shop-demo#/paths/~1users/post/responses", "fix": "", "ai_fix": ""}, {"verdict": "contradicted", "check": "response", "claim": "POST /users", "file": "docs/api.md", "line": 15, "message": "Response `409` is documented but the spec only defines `201`, `422`.", "evidence": "routes in shop-demo#/paths/~1users/post/responses", "fix": "Remove `409` from the docs, or add that response to the API.", "ai_fix": ""}, {"verdict": "verified", "check": "endpoint", "claim": "GET /users/{id}", "file": "docs/api.md", "line": 25, "message": "`GET /users/{user_id}` exists in the spec (path parameter is named `user_id` in the spec but `id` in the docs).", "evidence": "routes in shop-demo#/paths/~1users~1{user_id}/get", "fix": "", "ai_fix": ""}, {"verdict": "contradicted", "check": "endpoint", "claim": "PUT /users/{user_id}", "file": "docs/api.md", "line": 34, "message": "Docs say `PUT` but the spec defines DELETE, GET for `/users/{user_id}`.", "evidence": "routes in shop-demo#/paths/~1users~1{user_id}", "fix": "Use one of DELETE, GET for `/users/{user_id}` in the docs.", "ai_fix": ""}, {"verdict": "verified", "check": "endpoint", "claim": "POST /orders", "file": "docs/api.md", "line": 40, "message": "`POST /orders` exists in the spec.", "evidence": "routes in shop-demo#/paths/~1orders/post", "fix": "", "ai_fix": ""}, {"verdict": "verified", "check": "response", "claim": "POST /orders", "file": "docs/api.md", "line": 40, "message": "Response `201` is defined in the spec.", "evidence": "routes in shop-demo#/paths/~1orders/post/responses", "fix": "", "ai_fix": ""}, {"verdict": "contradicted", "check": "response", "claim": "POST /orders", "file": "docs/api.md", "line": 40, "message": "Response `400` is documented but the spec only defines `201`, `422`.", "evidence": "routes in shop-demo#/paths/~1orders/post/responses", "fix": "Remove `400` from the docs, or add that response to the API.", "ai_fix": ""}, {"verdict": "contradicted", "check": "endpoint", "claim": "GET /invoices", "file": "docs/api.md", "line": 50, "message": "The spec does not define the path `/invoices`.", "evidence": "routes in shop-demo (searched 4 paths)", "fix": "Remove `GET /invoices` from the docs, or add the endpoint to the API.", "ai_fix": ""}, {"verdict": "verified", "check": "endpoint", "claim": "GET /health", "file": "docs/api.md", "line": 56, "message": "`GET /health` exists in the spec.", "evidence": "routes in shop-demo#/paths/~1health/get", "fix": "", "ai_fix": ""}, {"verdict": "verified", "check": "example", "claim": "GET /users/42", "file": "docs/api.md", "line": 30, "message": "Example (curl) `GET /users/42` matches the spec.", "evidence": "routes in shop-demo#/paths/~1users~1{user_id}/get", "fix": "", "ai_fix": ""}, {"verdict": "contradicted", "check": "example", "claim": "POST /users", "file": "docs/api.md", "line": 31, "message": "Example (curl) `POST /users` sends body field `nickname` that is not in the spec (spec fields: `email`, `name`, `age`).", "evidence": "routes in shop-demo#/paths/~1users/post", "fix": "Remove `nickname` from the example body, or add it to the API.", "ai_fix": ""}, {"verdict": "contradicted", "check": "example", "claim": "POST /orders", "file": "docs/api.md", "line": 45, "message": "Example (curl) `POST /orders` omits the required body field `qty`.", "evidence": "routes in shop-demo#/paths/~1orders/post/requestBody/properties/qty", "fix": "Add `qty` to the example body.", "ai_fix": ""}, {"verdict": "verified", "check": "infra", "file": "docs/api.md", "line": 30, "subject": "port 8000", "message": "Port 8000 is exposed by the project.", "evidence": "Dockerfile:5", "fix": ""}, {"verdict": "verified", "check": "infra", "file": "docs/api.md", "line": 31, "subject": "port 8000", "message": "Port 8000 is exposed by the project.", "evidence": "Dockerfile:5", "fix": ""}, {"verdict": "verified", "check": "infra", "file": "docs/api.md", "line": 45, "subject": "port 8000", "message": "Port 8000 is exposed by the project.", "evidence": "Dockerfile:5", "fix": ""}, {"verdict": "contradicted", "check": "infra", "file": "docs/operations.md", "line": 5, "subject": "port 9000", "message": "The docs say port 9000 but the project exposes 5432, 8000.", "evidence": "5432 at docker-compose.yml:8; 8000 at Dockerfile:5", "fix": "Use one of the exposed ports (5432, 8000) or expose 9000."}, {"verdict": "verified", "check": "infra", "file": "docs/operations.md", "line": 5, "subject": "port 8000", "message": "Port 8000 is exposed by the project.", "evidence": "Dockerfile:5", "fix": ""}, {"verdict": "verified", "check": "infra", "file": "docs/operations.md", "line": 8, "subject": "service `api`", "message": "Compose service `api` exists.", "evidence": "docker-compose.yml:2", "fix": ""}, {"verdict": "contradicted", "check": "infra", "file": "docs/operations.md", "line": 8, "subject": "service `queue`", "message": "The docs mention compose service `queue` but no such service is defined (services: api, db).", "evidence": "searched the docker-compose file(s)", "fix": "Fix the service name or remove the sentence."}, {"verdict": "contradicted", "check": "infra", "file": "docs/operations.md", "line": 15, "subject": "value `image.tags`", "message": "The docs use Helm value `image.tags` but values.yaml has no such key.", "evidence": "searched values.yaml", "fix": "Use `image.tag`."}, {"verdict": "verified", "check": "infra", "file": "docs/operations.md", "line": 15, "subject": "value `replicaCount`", "message": "Helm value `replicaCount` exists.", "evidence": "deploy/chart/values.yaml", "fix": ""}, {"verdict": "verified", "check": "infra", "file": "docs/operations.md", "line": 16, "subject": "variable `region`", "message": "Terraform variable `region` is declared.", "evidence": "deploy/terraform/variables.tf:1", "fix": ""}, {"verdict": "contradicted", "check": "infra", "file": "docs/operations.md", "line": 16, "subject": "variable `instance_size`", "message": "The docs use Terraform variable `instance_size` but no `variable \"instance_size\"` block exists.", "evidence": "searched *.tf files", "fix": "Use `instance_type`."}, {"verdict": "verified", "check": "env", "file": "docs/setup.md", "line": 5, "subject": "`SHOP_API_KEY`", "message": "Environment variable `SHOP_API_KEY` is read by the code.", "evidence": "shop/settings.py:5", "fix": ""}, {"verdict": "verified", "check": "env", "file": "docs/setup.md", "line": 5, "subject": "`SHOP_DB_URL`", "message": "Environment variable `SHOP_DB_URL` is read by the code.", "evidence": "shop/settings.py:6", "fix": ""}, {"verdict": "contradicted", "check": "env", "file": "docs/setup.md", "line": 5, "subject": "`SHOP_DATABASE`", "message": "Environment variable `SHOP_DATABASE` is documented but never read by the code (the code reads 2 other variable(s)).", "evidence": "searched os.environ / os.getenv / process.env / .env.example", "fix": "Remove `SHOP_DATABASE` from the docs or add support for it in the code."}, {"verdict": "contradicted", "check": "env", "file": "docs/setup.md", "line": 8, "subject": "`SHOP_API_TOKEN`", "message": "Environment variable `SHOP_API_TOKEN` is documented but the code reads `SHOP_API_KEY`.", "evidence": "shop/settings.py:5", "fix": "Rename `SHOP_API_TOKEN` to `SHOP_API_KEY` in the docs."}, {"verdict": "verified", "check": "flag", "file": "docs/setup.md", "line": 9, "subject": "`--dry-run`", "message": "CLI flag `--dry-run` exists.", "evidence": "shop/cli.py:12", "fix": ""}, {"verdict": "contradicted", "check": "flag", "file": "docs/setup.md", "line": 9, "subject": "`--format`", "message": "CLI flag `--format` is documented but not defined in the code (2 flag(s) are defined).", "evidence": "searched argparse / click / commander definitions", "fix": "Remove `--format` from the docs or add the option to the CLI."}, {"verdict": "verified", "check": "reference", "file": "docs/setup.md", "line": 12, "subject": "`shop/settings.py`", "message": "The file `shop/settings.py` exists.", "evidence": "shop/settings.py", "fix": ""}, {"verdict": "uncertain", "check": "reference", "file": "docs/setup.md", "line": 12, "subject": "`shop/config.py`", "message": "The docs describe a past change to `shop/config.py`.", "evidence": "the current checkout alone cannot confirm the file's history", "fix": ""}, {"verdict": "verified", "check": "reference", "file": "docs/setup.md", "line": 13, "subject": "`build_order()`", "message": "`build_order` is defined in the code.", "evidence": "shop/cli.py:6", "fix": ""}, {"verdict": "contradicted", "check": "reference", "file": "docs/setup.md", "line": 13, "subject": "`build_orders()`", "message": "`build_orders()` is documented but the code defines `build_order` instead.", "evidence": "shop/cli.py:6", "fix": "Use `build_order()` in the docs."}, {"verdict": "verified", "check": "reference", "file": "docs/setup.md", "line": 14, "subject": "`api.md`", "message": "The linked file `api.md` exists.", "evidence": "docs/api.md", "fix": ""}, {"verdict": "contradicted", "check": "reference", "file": "docs/setup.md", "line": 14, "subject": "`deploy.md`", "message": "The linked file `deploy.md` does not exist in the repository.", "evidence": "searched the repository file list", "fix": "Fix or remove the reference to `deploy.md`."}, {"verdict": "contradicted", "check": "version", "file": "docs/setup.md", "line": 3, "subject": "Python 3.9+", "message": "The docs say Python 3.9+ but the project requires Python 3.11+.", "evidence": "pyproject.toml:4 (>=3.11)", "fix": "Change the docs to say Python 3.11+."}], "notes": [], "decisions": [{"id": "8d16a3ae53942ed5bcfbd3de", "kind": "change", "old": "20", "new": "50", "subject": "limit", "status": "pending", "evidence": "code: shop/main.py:27", "wording": "Changed `limit` from `20` to `50`.", "sources": [{"file": "api-sync.vtt", "time": "00:01:20", "speaker": "Marcus Lee", "quote": "For list endpoints we are changing the default limit from 20 to 50, but that is behind a flag for now."}], "edits": [], "owners": []}, {"id": "8f4d60d1d2768d7ce6dad818", "kind": "remove", "old": "/invoices", "new": "", "subject": "", "status": "ready", "evidence": "searched the code for `/invoices`", "wording": "Removed `/invoices`.", "sources": [{"file": "api-sync.vtt", "time": "00:01:08", "speaker": "Priya Shah", "quote": "Billing moved to its own service, so the /invoices endpoint was retired from this API."}], "edits": [{"file": "docs/api.md", "line": 50, "before": "### GET /invoices", "after": "### Removed GET endpoint `/invoices`"}], "owners": []}, {"id": "22ce20dbc700b1fcdaabf5fd", "kind": "remove", "old": "shop/config.py", "new": "", "subject": "", "status": "verified", "evidence": "meeting", "wording": "Removed `shop/config.py`.", "sources": [{"file": "api-sync.vtt", "time": "00:00:55", "speaker": "Dana Ortiz", "quote": "And the legacy loader shop/config.py was removed when we switched to settings.py."}], "edits": [], "owners": []}, {"id": "1a0d99969708502d3adc0f53", "kind": "rename", "old": "--format", "new": "--output-format", "subject": "", "status": "ready", "evidence": "code: shop/cli.py:13", "wording": "Renamed `--format` to `--output-format`.", "sources": [{"file": "api-sync.vtt", "time": "00:00:44", "speaker": "Dana Ortiz", "quote": "On the CLI side we renamed `--format` to `--output-format` two sprints ago, so that one is done."}], "edits": [{"file": "docs/setup.md", "line": 9, "before": "shopctl --dry-run --format table", "after": "shopctl --dry-run --output-format table"}], "owners": []}, {"id": "046e33c85c84e3d852608671", "kind": "rename", "old": "/orders", "new": "/purchases", "subject": "", "status": "pending", "evidence": "code: the API definition", "wording": "Renamed `/orders` to `/purchases`.", "sources": [{"file": "api-sync.vtt", "time": "00:00:31", "speaker": "Marcus Lee", "quote": "Also, we are moving the /orders endpoint to /purchases next quarter, finance asked for the new name."}], "edits": [], "owners": []}, {"id": "7915df3af30af7c798e24888", "kind": "rename", "old": "SHOP_DB_URL", "new": "SHOP_DATABASE_URL", "subject": "", "status": "pending", "evidence": "code: shop/settings.py:6", "wording": "Renamed `SHOP_DB_URL` to `SHOP_DATABASE_URL`.", "sources": [{"file": "api-sync.vtt", "time": "00:00:10", "speaker": "Priya Shah", "quote": "We agreed last week that SHOP_DB_URL is getting renamed to SHOP_DATABASE_URL so it matches the other services."}], "edits": [], "owners": []}], "decision_counts": {"pending": 3, "ready": 2, "verified": 1}, "conflicts": [], "inputs": {"documents": ["docs/api.md", "docs/operations.md", "docs/setup.md"], "meetings": ["api-sync.vtt"], "state": null, "owners": {}, "api": "routes in shop-demo"}, "release": null, "github": null, "github_error": null, "evaluation": {"cases": 24, "verdicts": {"verified": {"tp": 29, "fp": 0, "fn": 0, "precision": 1.0, "recall": 1.0}, "contradicted": {"tp": 27, "fp": 0, "fn": 0, "precision": 1.0, "recall": 1.0}, "uncertain": {"tp": 3, "fp": 0, "fn": 0, "precision": 1.0, "recall": 1.0}}, "problems": [], "results": [{"name": "correct endpoints", "problems": []}, {"name": "typo in path", "problems": []}, {"name": "endpoint that was never built", "problems": []}, {"name": "wrong HTTP method", "problems": []}, {"name": "path placeholder named differently", "problems": []}, {"name": "invented, correct and wrongly-typed parameters", "problems": []}, {"name": "wrong required flag and wrong location", "problems": []}, {"name": "documented response codes", "problems": []}, {"name": "deployment prefix cannot be confirmed", "problems": []}, {"name": "curl examples", "problems": []}, {"name": "sample responses", "problems": []}, {"name": "correct sample response", "problems": []}, {"name": "route path declared through a constant", "problems": []}, {"name": "route path that cannot be known statically", "problems": []}, {"name": "parameter type behind an unresolved external reference", "problems": []}, {"name": "environment variables", "problems": []}, {"name": "CLI flags", "problems": []}, {"name": "file and function references", "problems": []}, {"name": "version claims", "problems": []}, {"name": "unrelated technical text produces no alarms", "problems": []}, {"name": "container ports, compose services, Helm values and Terraform variables", "problems": []}, {"name": "anchor links", "problems": []}, {"name": "runbook commands", "problems": []}, {"name": "no infrastructure files means no infrastructure claims", "problems": []}]}}</script>
+<script>"use strict";
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const paths = {
+    layers: "M12 3 2 8l10 5 10-5-10-5ZM3 12l9 5 9-5M3 16l9 5 9-5",
+    overview: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
+    findings: "M4 4h16v16H4zM8 8h8M8 12h5M8 16h7",
+    meeting: "M3 5h13v9H8l-4 3v-3H3zM17 9h4v11l-5-3h-5",
+    review:
+      "M7 3v12M17 6v2a4 4 0 0 1-4 4H7M4 18a3 3 0 1 0 6 0 3 3 0 0 0-6 0ZM14 5a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z",
+    code: "m8 7-5 5 5 5m8-10 5 5-5 5m-3-14-2 18",
+    eval: "M3 3v17h18M7 15l4-5 3 2 6-7",
+    sources:
+      "M4 6c0-4 16-4 16 0s-16 4-16 0Zm0 0v12c0 4 16 4 16 0V6M4 12c0 4 16 4 16 0",
+    repo: "M4 5a2 2 0 0 1 2-2h13v17H6a2 2 0 0 1-2-2V5Zm0 12a2 2 0 0 1 2-2h13M8 7h6",
+    menu: "M3 6h18M3 12h18M3 18h18",
+    close: "m6 6 12 12M18 6 6 18",
+    panel: "M3 4h18v16H3zM9 4v16",
+    terminal: "m4 7 5 5-5 5m8 0h7",
+    refresh:
+      "M20 7v5h-5M4 17v-5h5M5 9a7.5 7.5 0 0 1 13-3l2 3M4 15l2 3a7.5 7.5 0 0 0 13-3",
+    check: "m5 12 4 4L19 6",
+    circlecheck: "M21 12a9 9 0 1 1-3-7M8 11l4 4 8-9",
+    alert: "m12 3 10 17H2L12 3Zm0 6v4m0 3v.3",
+    file: "M5 2h9l5 5v15H5zM14 2v6h5M8 12h8M8 16h6",
+    activity: "M2 12h5l3-8 4 16 3-8h5",
+    edit: "m4 16 12-12 4 4L8 20H4v-4ZM14 6l4 4",
+    clock: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 6v6l4 2",
+    flask:
+      "M8 3h8M10 3v6L4 19c-.5 1 .3 2 1.5 2h13c1.2 0 2-1 1.5-2L14 9V3M8 14h8",
+    link: "m9 15 6-6m-5-2 2-2a5 5 0 0 1 7 7l-2 2m-3 3-2 2a5 5 0 0 1-7-7l2-2",
+    folder: "M3 6h7l2 2h9v12H3z",
+    download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5",
+    bolt: "M13 2 5 14h6l-1 8 9-13h-7z",
+    person: "M15 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM3 21v-2c0-6 16-6 16 0v2",
+  };
+  const icon = (name) =>
+    `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`;
+  document
+    .querySelectorAll("[data-icon]")
+    .forEach((n) => (n.innerHTML = icon(n.dataset.icon)));
+  const e = (value) =>
+    String(value ?? "").replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
+  const human = (s) =>
+    String(s || "")
+      .replace(/[-_]+/g, " ")
+      .replace(/^./, (t) => t.toUpperCase());
+  const rich = (s) => e(s).replace(/\x60([^\x60]+)\x60/g, "<code>$1</code>");
+  const raw = $("snapshot").textContent.trim();
+  const offline = raw && raw !== "null";
+  let data = offline ? JSON.parse(raw) : null,
+    running = false,
+    lastView = "",
+    search = "";
+  const views = {
+    overview: [
+      "Overview",
+      "overview",
+      "Workspace overview",
+      "Documentation health, code evidence, and meeting follow-ups.",
+    ],
+    findings: [
+      "Audit findings",
+      "findings",
+      "Audit findings",
+      "Inspect each claim against its implementation and see the suggested fix.",
+    ],
+    meetings: [
+      "Meeting decisions",
+      "meeting",
+      "Meeting decisions",
+      "Follow technical decisions from meeting notes into the code and documentation.",
+    ],
+    reviews: [
+      "Reviews & releases",
+      "review",
+      "Reviews & releases",
+      "Inspect proposed edits, review ownership, conflicts, and release wording.",
+    ],
+    workbench: [
+      "API workbench",
+      "code",
+      "API workbench",
+      "Explore documented endpoints and the checks attached to each claim.",
+    ],
+    evaluations: [
+      "Evaluations",
+      "eval",
+      "Verifier evaluations",
+      "Regression results from the project’s hand-labeled test cases.",
+    ],
+    sources: [
+      "Data sources",
+      "sources",
+      "Data sources",
+      "Inspect the files and integrations behind this workspace.",
+    ],
+  };
+  const labels = {
+    ready: "Ready for review",
+    pending: "Pending",
+    verified: "Verified",
+    contradicted: "Contradicted",
+    uncertain: "Uncertain",
+    "manual review": "Manual review",
+    "conflicting decisions": "Conflict",
+  };
+  const tones = {
+    verified: "green",
+    ready: "",
+    pending: "amber",
+    contradicted: "red",
+    uncertain: "amber",
+    "manual review": "amber",
+    "conflicting decisions": "red",
+    merged: "green",
+    closed: "gray",
+    open: "blue",
+    draft: "",
+  };
+  const badge = (key, label) =>
+    `<span class="badge ${tones[key] ?? "gray"}">${e(label || labels[key] || human(key))}</span>`;
+  const tint = (key, tone = "") =>
+    `<span class="tint ${tone}">${icon(key)}</span>`;
+  const n = (key) => data.decision_counts[key] || 0;
+  const fmt = (x) => (x == null ? "—" : String(x));
+  const ratio = (v) => (v == null ? "—" : Math.round(v * 1000) / 10 + "%");
+  const section = (title, after = "", desc = "") =>
+    `<div class="sectionhead"><div><h2>${e(title)}</h2>${desc ? `<p>${e(desc)}</p>` : ""}</div>${after}</div>`;
+  const link = (text, hash) =>
+    `<a class="textlink" href="#${e(hash)}">${e(text)}</a>`;
+  const source = (ico, title, body, status = "") =>
+    `<div class="sourceitem">${tint(ico)}<div class="srctext"><strong>${e(title)}</strong><p>${e(body)}</p></div>${status ? `<span class="rowend">${status}</span>` : ""}</div>`;
+  const empty = (s) => `<p class="empty">${e(s)}</p>`;
+  const route = () => {
+    const [key, qs = ""] = location.hash.slice(1).split("?");
+    return {
+      key: Object.hasOwn(views, key) ? key : "overview",
+      query: new URLSearchParams(qs),
+    };
+  };
+  const routeTo = (key, params = {}) =>
+    key + (Object.keys(params).length ? "?" + new URLSearchParams(params) : "");
+  const sortedDecisions = () =>
+    [...data.decisions].sort(
+      (a, b) =>
+        rank(a.status) - rank(b.status) ||
+        decisionTitle(a).localeCompare(decisionTitle(b)),
+    );
+  const rank = (s) =>
+    ({
+      "conflicting decisions": 0,
+      ready: 1,
+      pending: 2,
+      "manual review": 3,
+      verified: 4,
+    })[s] ?? 5;
+  const decisionTitle = (d) =>
+    d.kind === "rename"
+      ? `Rename ${d.old}`
+      : d.kind === "change"
+        ? `Change ${d.subject}`
+        : `Remove ${d.old}`;
+  function nav(view) {
+    const groups = [
+      ["Workspace", ["overview", "findings", "meetings", "reviews"]],
+      ["Tools", ["workbench", "evaluations", "sources"]],
+    ];
+    $("nav").innerHTML = groups
+      .map(
+        ([group, keys]) =>
+          `<div class="navgroup"><div class="navtitle">${group}</div>${keys.map((k) => `<a class="navitem" href="#${k}" ${view === k ? 'aria-current="page"' : ""}>${icon(views[k][1])}<span>${views[k][0]}</span>${k === "findings" && data ? `<span class="nbadge">${data.findings.length}</span>` : ""}</a>`).join("")}</div>`,
+      )
+      .join("");
+  }
+  function pagehead(view) {
+    let action = "";
+    if (view === "overview")
+      action = offline
+        ? `<a class="btn primary" href="#findings?verdict=contradicted">${icon("findings")}Explore findings</a>`
+        : `<button class="btn primary" id="run-audit" ${running ? "disabled" : ""}>${icon("refresh")}${running ? "Running…" : "Run audit"}</button>`;
+    if (view === "workbench" && !offline)
+      action = `<a class="btn primary" href="/workbench">${icon("code")}Check your inputs</a>`;
+    return `<div class="pagehead"><div><span class="context">${icon(data.demo ? "flask" : "repo")}${data.demo ? "Demo workspace" : "Repository workspace"}</span><h1>${views[view][2]}</h1><p>${views[view][3]}</p></div>${action}</div>`;
+  }
+  function hero() {
+    const h = data.health;
+    return `<section class="hero" aria-label="Repository health"><div class="herotext"><div class="eyebrow">${icon("activity")}Audit snapshot</div><h2>Documentation health</h2><div class="score"><strong>${fmt(h.score)}</strong><span>/ 100</span></div><p>${h.verified} of ${data.findings.length} documentation checks verified.</p></div><div class="art" aria-hidden="true"><div class="sheet"></div><div class="sheet mid"></div><div class="sheet front"><i></i><i></i><i></i><span class="seal">${icon("check")}</span></div></div></section>`;
+  }
+  function metric(label, count, ico, tone, url) {
+    return `<a class="metric" style="color:inherit;text-decoration:none" href="#${e(url)}"><div class="metrictop">${tint(ico, tone)}${label}</div><strong>${count}</strong></a>`;
+  }
+  function fileChart() {
+    const rows = Object.entries(data.health.files).sort(
+      (a, b) => (a[1].score ?? 100) - (b[1].score ?? 100),
+    );
+    return `<section class="panel">${section("Health by document", "", "Score and verdict mix for each document.")}<div class="legend"><span class="key"><i class="swatch"></i>Verified</span><span class="key"><i class="swatch bad"></i>Contradicted</span>${data.health.uncertain ? '<span class="key"><i class="swatch unsure"></i>Uncertain</span>' : ""}</div>${
+      rows
+        .slice(0, 5)
+        .map(
+          ([path, h]) =>
+            `<a class="filebtn" style="color:inherit;text-decoration:none" href="#${e(routeTo("findings", { file: path }))}"><div class="filetop"><span>${e(path)}</span><b>${fmt(h.score)} / 100</b></div><div class="track" aria-hidden="true">${[
+              "verified",
+              "contradicted",
+              "uncertain",
+            ]
+              .filter((k) => h[k])
+              .map(
+                (k) =>
+                  `<i class="${k === "contradicted" ? "bad" : k === "uncertain" ? "unsure" : ""}" style="flex:${Number(h[k])}"></i>`,
+              )
+              .join("")}</div></a>`,
+        )
+        .join("") || empty("No files have checkable claims.")
+    }</section>`;
+  }
+  function decisionRow(d) {
+    return `<button class="rowbtn" data-decision="${e(d.id)}">${tint(d.kind === "rename" ? "review" : d.kind === "remove" ? "file" : "edit", d.status === "pending" ? "amber" : "")}<span class="rowcopy"><strong>${e(decisionTitle(d))}</strong><small>${e(d.edits[0]?.file || (d.kind === "change" ? d.old + " → " + d.new : d.kind === "rename" ? d.new : "Source file"))}</small></span>${badge(d.status)}</button>`;
+  }
+  function findingRow({ f, i }) {
+    return `<button class="rowbtn" data-finding="${i}">${tint(f.verdict === "verified" ? "circlecheck" : f.verdict === "uncertain" ? "clock" : "alert", tones[f.verdict])}<span class="rowcopy"><strong>${rich(f.message)}</strong><small>${e(f.file)}:${e(f.line)} · ${e(human(f.check))}</small></span>${badge(f.verdict)}</button>`;
+  }
+  const indexed = () => data.findings.map((f, i) => ({ f, i }));
+  function overview() {
+    const h = data.health;
+    const ds = sortedDecisions();
+    const recent = [
+      ...ds.filter((d) => d.status === "ready").slice(0, 1),
+      ...ds.filter((d) => d.status === "pending").slice(0, 1),
+      ...ds.filter((d) => d.status === "verified").slice(0, 1),
+    ];
+    const spots = [...new Set([...recent, ...ds])].slice(0, 3);
+    return (
+      hero() +
+      `<div class="metrics">${metric("Verified checks", h.verified, "circlecheck", "green", "findings?verdict=verified")}${metric("Contradictions", h.contradicted, "alert", "red", "findings?verdict=contradicted")}${metric("Meeting decisions", ds.length, "meeting", "blue", "meetings")}${metric("Edits ready", n("ready"), "edit", "", "reviews")}</div><div class="grid2">${fileChart()}<section class="panel">${section("Meeting decisions", link("View all", "meetings"), "Decision status against the current code.")}${spots.map(decisionRow).join("") || empty("No meeting decisions imported.")}</section></div><section class="panel">${section("Findings to review", link("View findings", "findings?verdict=contradicted"))}${
+        indexed()
+          .filter(({ f }) => f.verdict === "contradicted")
+          .slice(0, 4)
+          .map(findingRow)
+          .join("") || empty("No contradictions in this audit.")
+      }</section>`
+    );
+  }
+  function options(values, current) {
+    return values
+      .map(
+        ([val, text]) =>
+          `<option value="${e(val)}" ${val === current ? "selected" : ""}>${e(text)}</option>`,
+      )
+      .join("");
+  }
+  function findings(query) {
+    const selected = query.get("verdict") || "",
+      file = query.get("file") || "";
+    return `<section class="panel">${section("Evidence explorer")}<div class="toolbar"><input id="search" type="search" aria-label="Search findings" placeholder="Search messages, files, or evidence" value="${e(search)}"><select id="verdict" aria-label="Filter by verdict">${options([["", "All verdicts"], ...["verified", "contradicted", "uncertain"].map((x) => [x, labels[x]])], selected)}</select><select id="docfilter" aria-label="Filter by document">${options([["", "All documents"], ...Object.keys(data.health.files).map((x) => [x, x])], file)}</select></div><div id="filtered"></div></section>`;
+  }
+  function showFiltered() {
+    const word = search.toLowerCase(),
+      verdict = $("verdict").value,
+      doc = $("docfilter").value;
+    const rows = indexed().filter(
+      ({ f }) =>
+        (!verdict || f.verdict === verdict) &&
+        (!doc || f.file === doc) &&
+        (!word ||
+          [f.message, f.file, f.evidence, f.check, f.claim, f.subject]
+            .join(" ")
+            .toLowerCase()
+            .includes(word)),
+    );
+    $("filtered").innerHTML =
+      `<p class="listfoot" role="status">${rows.length} of ${data.findings.length} findings</p>` +
+      (rows.map(findingRow).join("") ||
+        empty("No findings match these filters."));
+  }
+  function meetings(query) {
+    const selected = query.get("status") || "";
+    const ds = sortedDecisions();
+    const states = [...new Set(ds.map((d) => d.status))];
+    return `<section class="panel">${section("Decision register")}<div class="toolbar">${[["", "All decisions"], ...states.map((s) => [s, labels[s] || human(s)])].map(([s, title]) => `<a class="chip" style="color:inherit" aria-current="${s === selected ? "true" : "false"}" href="#${e(routeTo("meetings", s ? { status: s } : {}))}">${e(title)} · ${s ? n(s) : ds.length}</a>`).join("")}</div>${
+      ds
+        .filter((d) => !selected || d.status === selected)
+        .map(decisionRow)
+        .join("") || empty("No decisions to show.")
+    }</section>`;
+  }
+  function reviews() {
+    const ready = sortedDecisions().filter((d) => d.status === "ready");
+    const gh = data.github;
+    const ghList = (rows, kind) =>
+      rows
+        .map(
+          (p) =>
+            `<a class="rowbtn" style="color:inherit;text-decoration:none" target="_blank" rel="noopener" href="https://github.com/${e(gh.repo)}/${kind}/${Number(p.number)}">${tint(kind === "pull" ? "review" : "alert")}<span class="rowcopy"><strong>${e(p.title)}</strong><small>#${p.number}${p.owners?.length ? " · " + e(p.owners.join(", ")) : ""}</small></span>${badge(p.status)}</a>`,
+        )
+        .join("");
+    return `<div class="grid2"><section class="panel">${section("Ready for a draft PR", badge("ready", String(ready.length)))}${ready.map(decisionRow).join("") || empty("No edits are ready for review.")}</section><section class="panel">${section("Conflicting decisions", badge("gray", String(data.conflicts.length)))}${data.conflicts.map((c) => `<details><summary>${e(c.title)}</summary><pre>${e(c.description)}</pre></details>`).join("") || empty("No conflicting decisions were found in these sources.")}</section></div><section class="panel stack">${section("GitHub review activity")}${gh ? ghList(gh.pulls, "pull") + ghList(gh.issues, "issues") || empty("No meeting PRs or conflict issues in the selected repository.") : source("review", "GitHub activity is offline", data.github_error || "Draft PRs, requested reviewers, and conflict issues appear here when a repository is connected.")}</section><section class="panel stack">${section("Release notes")}${data.release ? `<h3>Imported release draft</h3><pre>${e(data.release)}</pre>` : `<p class="muted">Approved, merged edits qualify for the release draft. The wording below previews edits awaiting review.</p>${ready.map((d) => `<p class="statusbox">${rich(d.wording)}</p>`).join("") || empty("No release wording to preview.")}`}</section>`;
+  }
+  function workbench() {
+    const fs = indexed().filter(({ f }) => "claim" in f);
+    const groups = new Map();
+    for (const row of fs) {
+      const claim = row.f.claim || "API documentation";
+      if (!groups.has(claim)) groups.set(claim, []);
+      groups.get(claim).push(row);
+    }
+    return `<section class="panel">${section("Documented API claims", badge("gray", String(fs.length) + " checks"))}${offline ? '<p class="muted">Explore the saved audit here. The local workbench also accepts your own OpenAPI spec, docs, and meeting notes.</p>' : ""}${[...groups].map(([name, rows], i) => `<details class="subpanel" ${i === 0 ? "open" : ""}><summary><b>${e(name)}</b> · ${rows.length} ${rows.length === 1 ? "check" : "checks"}</summary>${rows.map(findingRow).join("")}</details>`).join("") || empty("No API claims found.")}</section>`;
+  }
+  function evaluations() {
+    const v = data.evaluation,
+      passed = v.results.filter((c) => !c.problems.length).length;
+    return `<section class="panel">${section("Labeled evaluation set", badge(passed === v.cases ? "verified" : "contradicted", passed + " / " + v.cases + " passed"), "Precision and recall against the project’s own fixtures.")}<table class="benchmark"><thead><tr><th>Verdict</th><th>Matches</th><th>Precision</th><th>Recall</th></tr></thead><tbody>${Object.entries(
+      v.verdicts,
+    )
+      .map(
+        ([k, t]) =>
+          `<tr><td>${badge(k)}</td><td>${t.tp}</td><td>${ratio(t.precision)}</td><td>${ratio(t.recall)}</td></tr>`,
+      )
+      .join(
+        "",
+      )}</tbody></table></section><section class="panel stack">${section("Evaluation cases")}<div class="cases">${v.results.map((c) => `<div class="case"><div>${e(human(c.name))}${c.problems.map((p) => `<p>${e(p)}</p>`).join("")}</div>${badge(c.problems.length ? "contradicted" : "verified", c.problems.length ? "Failed" : "Passed")}</div>`).join("")}</div></section>`;
+  }
+  function sources() {
+    const s = data.inputs;
+    return `<div class="grid2"><section class="panel">${section("Workspace inputs", offline ? "" : '<a class="textlink" href="/portfolio.html" download="doc-check-portfolio.html">Download portfolio demo</a>')}${source("repo", data.project, s.api || "Repository source tree")}${source("folder", "Documentation", s.documents.join(", ") || "No documents")}${source("meeting", "Meeting exports", s.meetings.join(", ") || "No local meeting files selected")}${source("sources", "Saved decisions", s.state || "No persistent decision database selected")}</section><section class="panel">${section("Integration inputs")}${source("meeting", "Microsoft Teams", "Single meeting, organizer, or tenant collection through the meeting sync workflow.")}${source("file", "OneDrive & Loop", "Native Loop notes, Word transcripts, Markdown, text, and WebVTT.")}${source("review", "GitHub", data.github ? data.github.repo : data.github_error || "No live repository selected for this dashboard.")}${source(
+      "person",
+      "Documentation owners",
+      Object.entries(s.owners)
+        .map(([p, o]) => p + " · " + (o.join(", ") || "unassigned"))
+        .join("; ") || "No documentation owners configured.",
+    )}</section></div>`;
+  }
+  function detail(type, body) {
+    $("detail-type").textContent = type;
+    $("detail-body").innerHTML = body;
+    $("detail").showModal();
+    $("close-detail").focus();
+  }
+  function openFinding(i) {
+    const f = data.findings[i];
+    if (!f) return;
+    detail(
+      "Finding evidence",
+      `${badge(f.verdict)}<h2>${rich(f.claim || f.subject || human(f.check))}</h2><p>${rich(f.message)}</p><h3>Documentation</h3><pre>${e(f.file)}:${e(f.line)}</pre><h3>Repository evidence</h3><pre>${e(f.evidence || "No supporting evidence recorded.")}</pre>${f.fix ? `<h3>Suggested fix</h3><p>${rich(f.fix)}</p>` : ""}`,
+    );
+  }
+  function openDecision(id) {
+    const d = data.decisions.find((i) => i.id === id);
+    if (!d) return;
+    detail(
+      "Meeting decision",
+      `${badge(d.status)}<h2>${e(decisionTitle(d))}</h2><p>${rich(d.wording)}</p>${d.sources.map((s) => `<h3>Meeting evidence</h3><p class="statusbox">${rich(s.quote)}</p><small class="muted">${e([s.file, s.time, s.speaker].filter(Boolean).join(" · "))}</small>`).join("")}<h3>Repository evidence</h3><pre>${e(d.evidence || "Awaiting repository evidence.")}</pre>${d.edits.length ? `<h3>Proposed documentation edits</h3>${d.edits.map((t) => `<div class="diff"><div class="path">${e(t.file)}:${t.line}</div><div class="minus">− ${e(t.before)}</div><div class="plus">+ ${e(t.after)}</div></div>`).join("")}<h3>Requested owners on publish</h3><p>${e(d.owners.join(", ") || "No owners configured for these documents.")}</p>` : ""}${d.status === "pending" ? '<p class="statusbox">The sync checks this decision again when the repository changes.</p>' : ""}`,
+    );
+  }
+  function menu(open) {
+    document.body.classList.toggle("navopen", open);
+    $("menutoggle").setAttribute("aria-expanded", String(open));
+    $("scrim").hidden = !open;
+    if (open) $("nav").querySelector("[aria-current]")?.focus();
+  }
+  function render() {
+    const { key, query } = route();
+    nav(key);
+    $("crumb").textContent = views[key][0];
+    document.title = views[key][0] + " · Doc Check";
+    if (!data) return;
+    $("repo").textContent = data.project;
+    $("side-mode").textContent = offline
+      ? "Portfolio snapshot"
+      : "Local workspace";
+    if (key !== lastView) {
+      search = "";
+      window.scrollTo(0, 0);
+    }
+    lastView = key;
+    const content = {
+      overview,
+      findings,
+      meetings,
+      reviews,
+      workbench,
+      evaluations,
+      sources,
+    }[key](query);
+    $("content").innerHTML =
+      pagehead(key) +
+      content +
+      (key === "overview" && data.notes.length
+        ? `<div class="notice">${data.notes.map(e).join("<br>")}</div>`
+        : "");
+    if (key === "findings") {
+      showFiltered();
+      $("search").oninput = (ev) => {
+        search = ev.target.value;
+        showFiltered();
+      };
+      for (const id of ["verdict", "docfilter"])
+        $(id).onchange = () => {
+          const params = {};
+          if ($("verdict").value) params.verdict = $("verdict").value;
+          if ($("docfilter").value) params.file = $("docfilter").value;
+          location.hash = routeTo("findings", params);
+        };
+    }
+  }
+  async function refresh() {
+    if (running || offline) return;
+    running = true;
+    render();
+    $("announce").textContent = "Running repository audit.";
+    try {
+      const response = await fetch("/api/workspace", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok)
+        throw new Error(payload.error || "Could not load the audit.");
+      data = payload;
+      render();
+      $("announce").textContent = "Repository audit complete.";
+    } catch (err) {
+      $("content").innerHTML =
+        `<h1>Workspace unavailable</h1><p class="notice error" role="alert">${e(err.message)}</p><button class="btn" id="retry">Retry audit</button>`;
+    } finally {
+      running = false;
+      const b = $("run-audit");
+      if (b) {
+        b.disabled = false;
+        b.innerHTML = icon("refresh") + "Run audit";
+      }
+    }
+  }
+  document.addEventListener("click", (ev) => {
+    const t = ev.target.closest("button,a");
+    if (!t) return;
+    if (t.id === "run-audit" || t.id === "retry") refresh();
+    else if (t.hasAttribute("data-finding"))
+      openFinding(Number(t.dataset.finding));
+    else if (t.hasAttribute("data-decision")) openDecision(t.dataset.decision);
+    else if (t.id === "close-detail") $("detail").close();
+    else if (t.id === "menutoggle") menu(true);
+    else if (t.id === "scrim") {
+      menu(false);
+      $("menutoggle").focus();
+    } else if (
+      t.closest("#nav") &&
+      document.body.classList.contains("navopen")
+    ) {
+      menu(false);
+      $("content").focus();
+    }
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && document.body.classList.contains("navopen")) {
+      menu(false);
+      $("menutoggle").focus();
+    }
+  });
+  window.addEventListener("hashchange", () => {
+    render();
+    $("content").focus({ preventScroll: true });
+  });
+  render();
+  if (!offline) refresh();
+})();
+</script>
+</body></html>

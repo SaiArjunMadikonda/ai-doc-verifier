@@ -1,11 +1,13 @@
-# Code-to-Docs - AI Documentation Assistant
+# AI Doc Verifier
 
-[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue.svg)](https://github.com/marketplace/actions/upstream-docs-enhancer)
+Sai Arjun Madikonda extended Red Hat’s MIT-licensed Code-to-Docs project with documentation verification, meeting-decision checks, and an interactive review dashboard. The original action proposes documentation edits from code changes. This fork also checks claims against the repository and shows reviewers the evidence for each finding. [Upstream Code-to-Docs](https://github.com/redhat-community-ai-tools/code-to-docs)
+
+[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue.svg)](action.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[**Try the interactive demo**](https://redhat-community-ai-tools.github.io/code-to-docs/demo/)
+[**Open the review dashboard**](https://saiarjunmadikonda.github.io/ai-doc-verifier/) · [Download the standalone demo](https://github.com/SaiArjunMadikonda/ai-doc-verifier/raw/refs/heads/main/demo/index.html)
 
-AI-powered GitHub Action that automatically analyzes code changes and updates documentation using any OpenAI-compatible LLM (vLLM on OpenShift AI, Gemini, OpenAI, etc.).
+Try the bundled shop example. Open a finding to see the documentation claim and the code that supports or contradicts it, then open **Meeting notes** to trace a decision to a proposed edit. The verifier runs without a model key.
 
 ## Usage
 
@@ -13,7 +15,7 @@ Comment on any Pull Request:
 - **`[review-docs]`** - Analyzes code changes, identifies relevant doc files, and posts a review comment with checkboxes to accept or reject each suggestion
 - **`[update-docs]`** - Creates a docs PR with only the accepted files from a previous review (or runs the full pipeline if no review exists)
 - **`[review-feature] PROJ-123`** - Runs `[review-docs]` and adds a **Spec vs Code Analysis** section that fetches the Jira ticket and its linked spec docs (Confluence, Google Docs), compares requirements against the PR code changes, and identifies covered, missing, and unplanned changes
-- **`[verify-docs]`** - Runs every deterministic check (API contract, code examples, env vars, CLI flags, file/function references, version claims) and posts one report with a combined health score. No LLM needed. See [Documentation Audit](#documentation-audit)
+- **`[verify-docs]`** - Runs every deterministic check (API contract, code examples, env vars, CLI flags, file/function references, version claims) and posts one report with a combined health score. New contradictions fail the action. No LLM needed. See [Documentation Audit](#documentation-audit)
 - **`[verify-api]`** - Checks the API documentation against your OpenAPI spec (no LLM needed) and posts a report where every check is **verified**, **contradicted** (with evidence from the spec) or **uncertain**. See [API Contract Verification](#api-contract-verification)
 
 ### Recommended Workflow
@@ -88,7 +90,35 @@ This file is optional — if missing, the tool uses default titles with no prefi
 
 ## Setup
 
-### 1. Add Workflow
+### Run verification on each pull request
+
+For docs in the same repository, save this as `.github/workflows/verify-docs.yml`. Set `docs-subfolder` to your documentation directory. Full Git history lets the action compare the PR head with its merge base. The read-only job prints the audit in its log and fails on new contradictions.
+
+```yaml
+name: Verify documentation
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: SaiArjunMadikonda/ai-doc-verifier@376c73aa079613f1183fbc797e997ea0ef96c9d2
+        env:
+          DOCAUDIT_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        with:
+          github-token: ${{ github.token }}
+          comment-body: '[verify-docs]'
+          docs-subfolder: docs
+          dry-run: 'true'
+```
+
+### 1. Add the optional PR-comment workflow
 
 Create `.github/workflows/docs-assistant.yml`:
 
@@ -154,7 +184,7 @@ jobs:
             "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64 -w 0)"
 
       - name: Documentation Assistant
-        uses: redhat-community-ai-tools/code-to-docs@v1
+        uses: SaiArjunMadikonda/ai-doc-verifier@376c73aa079613f1183fbc797e997ea0ef96c9d2
         with:
           model-api-base: ${{ secrets.MODEL_API_BASE }}
           model-api-key: ${{ secrets.MODEL_API_KEY }}
@@ -275,18 +305,22 @@ Exit codes: `0` ok, `1` something is contradicted (or the score is under `--fail
 ### Catch drift in pull requests
 
 ```bash
-# only the docs a PR touches, plus docs that mention a code file it changed
+# check edited pages, references to changed files, and pages affected by API drift
 python src/docaudit.py --changed-since origin/main
 
-# adopt the tool on a project with old problems: only NEW contradictions fail
+# record the current contradictions and adopt a minimum health score
 python src/docaudit.py --update-baseline        # writes .docaudit-baseline.json
-python src/docaudit.py --fail-under 80          # known problems no longer fail the run
+python src/docaudit.py --fail-under 80          # apply the threshold to the remaining checks
 
 # findings in GitHub's Code Scanning tab
 python src/docaudit.py --sarif docaudit.sarif
 ```
 
-Findings in the baseline are matched by file, check, subject and message, not by line number, so editing the docs above a known problem does not make it look new. Deliberate exceptions go in `.docaudit.json`: `{"ignore": [{"file": "docs/legacy/*", "check": "reference"}]}`. In the GitHub Action set `DOCAUDIT_BASE_REF` to scope `[verify-docs]` to the changed files; both files are picked up from the repository root automatically.
+A scoped audit includes unchanged pages whose API checks differ between the merge base and the PR head. Renaming `GET /users` to `GET /customers` therefore checks both a guide and a curl example that still use the old endpoint, even when neither names the route’s source file.
+
+The default gate fails on any new contradiction. With `--fail-under`, the gate instead uses the score for checks remaining after accepted contradictions are excluded. The report and history keep the overall health score so existing debt stays visible. In the shop demo, accepting all 19 contradictions leaves overall health at **55.7** and gives a threshold score of **98**, so a threshold of 80 passes. An audit containing only accepted contradictions passes. A full audit with zero verifiable claims fails a requested threshold.
+
+The baseline matches by file, check, subject and message, so line-number changes preserve a match. Commit `.docaudit-baseline.json` at the repository root to share accepted findings with CI. The action also reads deliberate exceptions from `.docaudit.json`, for example `{"ignore": [{"file": "docs/legacy/*", "check": "reference"}]}`.
 
 ### Breaking changes and deprecations
 
@@ -390,7 +424,7 @@ python web/server.py --project /path/to/repo --docs docs --notes /path/to/meetin
 
 Use `--state` to read an existing meeting-sync database, `--release-notes` to display a saved release draft, and `--github-repo OWNER/REPO --base BRANCH` to read actual meeting PRs, review requests and conflict issues through an authenticated GitHub CLI. All dashboard views are read-only. The default demo runs locally without accounts.
 
-`examples/shop-demo/` is a small FastAPI project whose docs contain 20 deliberately planted mistakes (API, environment, CLI, files, container, compose, Helm and Terraform); `EXPECTED_OUTPUT.md` is the report the checker produces for it, and a test keeps it current.
+The shop demo produces 24 verified findings, 19 contradictions and one uncertain historical reference. Its setup guide says `shop/config.py` was removed. The current checkout can establish that the file is absent, but dating its removal would require historical evidence. [Read the generated audit](examples/shop-demo/EXPECTED_OUTPUT.md)
 
 ## Accuracy
 
@@ -414,7 +448,7 @@ flowchart LR
 
 The `[review-feature]` command runs the full `[review-docs]` flow (identifying relevant doc files and suggesting updates) and adds a **Spec vs Code Analysis** section. It fetches the Jira ticket and its linked specification documents, extracts requirements, and compares them against the PR code changes to identify covered, missing, and unplanned changes.
 
-[**See it in action**](https://redhat-community-ai-tools.github.io/code-to-docs/demo/review-feature)
+[**Walk through a sample feature review**](https://saiarjunmadikonda.github.io/ai-doc-verifier/review-feature.html)
 
 ### Spec Doc Locations
 
